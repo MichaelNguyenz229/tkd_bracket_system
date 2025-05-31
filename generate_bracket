@@ -1,4 +1,5 @@
-Sub generate_bracket(Optional destWorkbook As Workbook)
+' Modified bracket generator that returns sheet name
+Function GenerateBracketForCurrentFilter() As String
     Dim wsSrc As Worksheet, wsBracket As Worksheet
     Dim templateSheet As Worksheet
     Dim fullTitle As String, cleanTitle As String
@@ -10,162 +11,91 @@ Sub generate_bracket(Optional destWorkbook As Workbook)
 
     Set wsSrc = ThisWorkbook.Sheets("Division_Report")
 
-    ' Step 1: Count contestants
+    ' Count contestants
     i = 5: c = 1
     Do While wsSrc.Cells(i, 1).Value <> "Grand Total"
         If wsSrc.Cells(i, 1).IndentLevel > 0 Then c = c + 1
         i = i + 1
     Loop
     totalContestants = c - 1
-    If totalContestants < 1 Then
-        MsgBox "No contestants found.", vbExclamation
-        Exit Sub
-    End If
+    If totalContestants < 1 Then Exit Function
 
-    ' Step 2: Determine bracket size
+    ' Determine bracket size
     bracketSize = 2
     Do While bracketSize < totalContestants
         bracketSize = bracketSize * 2
     Loop
 
-    ' Step 3: Get title and clean it
+    ' Get division title
     fullTitle = Trim(wsSrc.Range("B2").Text)
-    If fullTitle = "" Then
-        MsgBox "Cell B2 is empty. Cannot use title.", vbCritical
-        Exit Sub
-    End If
+    If fullTitle = "" Then Exit Function
 
+    ' Clean title for sheet name
     Set regEx = CreateObject("VBScript.RegExp")
     With regEx
         .Global = True
-        .Pattern = "\s\d{1,2}-\d{1,2}"  ' Remove age range
+        .Pattern = "\s\d{1,2}-\d{1,2}"
         cleanTitle = .Replace(fullTitle, "")
-        .Pattern = "\s\d+(\.\d+)?\s*-\s*\d+(\.\d+)?\s*\w{0,3}$" ' Remove weight
+        .Pattern = "\s\d+(\.\d+)?\s*-\s*\d+(\.\d+)?\s*\w{0,3}$"
         cleanTitle = .Replace(cleanTitle, "")
     End With
-    cleanTitle = Replace(cleanTitle, "\", "")
-    cleanTitle = Replace(cleanTitle, "/", "")
-    cleanTitle = Replace(cleanTitle, ":", "")
-    cleanTitle = Replace(cleanTitle, "*", "")
-    cleanTitle = Replace(cleanTitle, "?", "")
-    cleanTitle = Replace(cleanTitle, "[", "")
-    cleanTitle = Replace(cleanTitle, "]", "")
+    cleanTitle = Application.WorksheetFunction.Substitute(cleanTitle, "\", "")
+    cleanTitle = Application.WorksheetFunction.Substitute(cleanTitle, "/", "")
+    cleanTitle = Application.WorksheetFunction.Substitute(cleanTitle, ":", "")
+    cleanTitle = Application.WorksheetFunction.Substitute(cleanTitle, "*", "")
+    cleanTitle = Application.WorksheetFunction.Substitute(cleanTitle, "?", "")
+    cleanTitle = Application.WorksheetFunction.Substitute(cleanTitle, "[", "")
+    cleanTitle = Application.WorksheetFunction.Substitute(cleanTitle, "]", "")
     If Len(cleanTitle) > 31 Then cleanTitle = Left(cleanTitle, 31)
 
-    ' Step 4: Get correct template
+    ' Exit if sheet already exists
     On Error Resume Next
-    Set templateSheet = ThisWorkbook.Sheets(bracketSize & "_template")
+    Set wsBracket = ThisWorkbook.Sheets(cleanTitle)
     On Error GoTo 0
-    If templateSheet Is Nothing Then
-        MsgBox "Template '" & bracketSize & "_template' not found.", vbCritical
-        Exit Sub
-    End If
+    If Not wsBracket Is Nothing Then Exit Function
 
-    ' Create bracket sheet (duplicate the template manually)
-    Set wsBracket = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
-    templateSheet.Cells.Copy Destination:=wsBracket.Cells
+    ' Copy template
+    Set templateSheet = ThisWorkbook.Sheets(bracketSize & "_template")
+    If templateSheet Is Nothing Then Exit Function
+    templateSheet.Copy After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count)
+    Set wsBracket = ActiveSheet
     On Error Resume Next
     wsBracket.Name = cleanTitle
-    If Err.Number <> 0 Then
-        wsBracket.Name = "Bracket_" & Format(Now, "hhmmss")
-        Err.Clear
-    End If
     On Error GoTo 0
-
-
-    If Not destWorkbook Is Nothing Then
-        wsBracket.Copy After:=destWorkbook.Sheets(destWorkbook.Sheets.Count)
-        Application.DisplayAlerts = False
-        wsBracket.Delete
-        Application.DisplayAlerts = True
-        Set wsBracket = destWorkbook.Sheets(destWorkbook.Sheets.Count)
-    End If
-
-    ' Write bracket title
     wsBracket.Range("Q11").Value = fullTitle
 
-    ' Step 5: Load and group contestants by school
-    Dim allContestants As Collection: Set allContestants = New Collection
-    Dim schoolMap As Object: Set schoolMap = CreateObject("Scripting.Dictionary")
-    i = 5: currentSchool = ""
-    Do While wsSrc.Cells(i, 1).Value <> "Grand Total"
+    ' Load contestants
+    ReDim contestantList(1 To bracketSize, 1 To 2)
+    i = 5: c = 1
+    Do While wsSrc.Cells(i, 1).Value <> "Grand Total" And c <= bracketSize
         If wsSrc.Cells(i, 1).IndentLevel = 0 Then
             currentSchool = wsSrc.Cells(i, 1).Value
         Else
-            Dim entry(1 To 2) As String
-            entry(1) = wsSrc.Cells(i, 1).Value
-            entry(2) = currentSchool
-            allContestants.Add entry
-            
-            If Not schoolMap.exists(currentSchool) Then
-                schoolMap.Add currentSchool, New Collection
-            End If
-            schoolMap(currentSchool).Add entry
+            contestantList(c, 1) = wsSrc.Cells(i, 1).Value
+            contestantList(c, 2) = currentSchool
+            c = c + 1
         End If
         i = i + 1
     Loop
-    
-    ' Create final contestantList by alternating between schools
-    Dim placed() As Variant
-    ReDim placed(1 To bracketSize, 1 To 2)
-    
-    Dim schoolKeys As Variant: schoolKeys = schoolMap.Keys
-    Dim placedIndex As Long: placedIndex = 1
-    
-    Do While placedIndex <= totalContestants
-        For Each school In schoolKeys
-            If schoolMap(school).Count > 0 Then
-                Dim person As Variant
-                person = schoolMap(school)(1)
-                placed(placedIndex, 1) = person(1)
-                placed(placedIndex, 2) = person(2)
-                schoolMap(school).Remove 1
-                placedIndex = placedIndex + 1
-                If placedIndex > totalContestants Then Exit For
-            End If
-        Next school
-    Loop
-    
-    ' Fill remaining slots with BYEs
     For i = totalContestants + 1 To bracketSize
-        placed(i, 1) = "BYE"
-        placed(i, 2) = ""
+        contestantList(i, 1) = "BYE"
+        contestantList(i, 2) = ""
     Next i
-    
-    contestantList = placed
 
-
-    ' Step 6: Fill order setup
+    ' Fill order
     Select Case bracketSize
-        Case 2
-            fillOrder = Array(Array("N17", "N18"), Array("T17", "T18"))
-        Case 4
-            fillOrder = Array(Array("J10", "J11"), Array("X10", "X11"), Array("J26", "J27"), Array("X26", "X27"))
-        Case 8
-            fillOrder = Array(Array("F6", "F7"), Array("F22", "F23"), Array("AB6", "AB7"), Array("AB22", "AB23"), Array("F14", "F15"), Array("F30", "F31"), Array("AB14", "AB15"), Array("AB30", "AB31"))
-        Case 16
-            fillOrder = Array(Array("B4", "B5"), Array("B12", "B13"), Array("B20", "B21"), Array("B28", "B29"), Array("AF4", "AF5"), Array("AF12", "AF13"), Array("AF20", "AF21"), Array("AF28", "AF29"), Array("B8", "B9"), Array("B16", "B17"), Array("B24", "B25"), Array("B32", "B33"), Array("AF8", "AF9"), Array("AF16", "AF17"), Array("AF24", "AF25"), Array("AF32", "AF33"))
-        Case Else
-            MsgBox "Unsupported bracket size: " & bracketSize, vbCritical
-            Exit Sub
+        Case 2: fillOrder = Array(Array("N17", "N18"), Array("T17", "T18"))
+        Case 4: fillOrder = Array(Array("J10", "J11"), Array("X10", "X11"), Array("J26", "J27"), Array("X26", "X27"))
+        Case 8: fillOrder = Array(Array("F6", "F7"), Array("F22", "F23"), Array("AB6", "AB7"), Array("AB22", "AB23"), Array("F14", "F15"), Array("F30", "F31"), Array("AB14", "AB15"), Array("AB30", "AB31"))
+        Case 16: fillOrder = Array(Array("B4", "B5"), Array("B12", "B13"), Array("B20", "B21"), Array("B28", "B29"), Array("AF4", "AF5"), Array("AF12", "AF13"), Array("AF20", "AF21"), Array("AF28", "AF29"), Array("B8", "B9"), Array("B16", "B17"), Array("B24", "B25"), Array("B32", "B33"), Array("AF8", "AF9"), Array("AF16", "AF17"), Array("AF24", "AF25"), Array("AF32", "AF33"))
+        Case Else: Exit Function
     End Select
 
-    If UBound(fillOrder) + 1 < bracketSize Then
-        MsgBox "Bracket size (" & bracketSize & ") exceeds available fill positions.", vbCritical
-        Exit Sub
-    End If
-
-    On Error GoTo FillError
-    
+    ' Fill bracket
     For i = 1 To bracketSize
         wsBracket.Range(fillOrder(i - 1)(0)).Value = contestantList(i, 1)
         wsBracket.Range(fillOrder(i - 1)(1)).Value = contestantList(i, 2)
     Next i
-    
-    On Error GoTo 0
-    Exit Sub
-    
-FillError:
-        MsgBox "Error filling bracket at i=" & i & ", Range=" & fillOrder(i - 1)(0), vbCritical
-        Exit Sub
-End Sub
+
+    GenerateBracketForCurrentFilter = wsBracket.Name
+End Function
