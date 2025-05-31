@@ -84,23 +84,56 @@ Sub generate_bracket(Optional destWorkbook As Workbook)
     ' Write bracket title
     wsBracket.Range("Q11").Value = fullTitle
 
-    ' Step 5: Load contestant data
-    ReDim contestantList(1 To bracketSize, 1 To 2)
-    i = 5: c = 1
-    Do While wsSrc.Cells(i, 1).Value <> "Grand Total" And c <= bracketSize
+    ' Step 5: Load and group contestants by school
+    Dim allContestants As Collection: Set allContestants = New Collection
+    Dim schoolMap As Object: Set schoolMap = CreateObject("Scripting.Dictionary")
+    i = 5: currentSchool = ""
+    Do While wsSrc.Cells(i, 1).Value <> "Grand Total"
         If wsSrc.Cells(i, 1).IndentLevel = 0 Then
             currentSchool = wsSrc.Cells(i, 1).Value
         Else
-            contestantList(c, 1) = wsSrc.Cells(i, 1).Value
-            contestantList(c, 2) = currentSchool
-            c = c + 1
+            Dim entry(1 To 2) As String
+            entry(1) = wsSrc.Cells(i, 1).Value
+            entry(2) = currentSchool
+            allContestants.Add entry
+            
+            If Not schoolMap.exists(currentSchool) Then
+                schoolMap.Add currentSchool, New Collection
+            End If
+            schoolMap(currentSchool).Add entry
         End If
         i = i + 1
     Loop
+    
+    ' Create final contestantList by alternating between schools
+    Dim placed() As Variant
+    ReDim placed(1 To bracketSize, 1 To 2)
+    
+    Dim schoolKeys As Variant: schoolKeys = schoolMap.Keys
+    Dim placedIndex As Long: placedIndex = 1
+    
+    Do While placedIndex <= totalContestants
+        For Each school In schoolKeys
+            If schoolMap(school).Count > 0 Then
+                Dim person As Variant
+                person = schoolMap(school)(1)
+                placed(placedIndex, 1) = person(1)
+                placed(placedIndex, 2) = person(2)
+                schoolMap(school).Remove 1
+                placedIndex = placedIndex + 1
+                If placedIndex > totalContestants Then Exit For
+            End If
+        Next school
+    Loop
+    
+    ' Fill remaining slots with BYEs
     For i = totalContestants + 1 To bracketSize
-        contestantList(i, 1) = "BYE"
-        contestantList(i, 2) = ""
+        placed(i, 1) = "BYE"
+        placed(i, 2) = ""
     Next i
+    
+    contestantList = placed
+
 
     ' Step 6: Fill order setup
     Select Case bracketSize
@@ -117,11 +150,22 @@ Sub generate_bracket(Optional destWorkbook As Workbook)
             Exit Sub
     End Select
 
-    ' Step 7: Fill bracket
+    If UBound(fillOrder) + 1 < bracketSize Then
+        MsgBox "Bracket size (" & bracketSize & ") exceeds available fill positions.", vbCritical
+        Exit Sub
+    End If
+
+    On Error GoTo FillError
+    
     For i = 1 To bracketSize
         wsBracket.Range(fillOrder(i - 1)(0)).Value = contestantList(i, 1)
         wsBracket.Range(fillOrder(i - 1)(1)).Value = contestantList(i, 2)
     Next i
-
-    'MsgBox "Bracket created!", vbInformation
+    
+    On Error GoTo 0
+    Exit Sub
+    
+FillError:
+        MsgBox "Error filling bracket at i=" & i & ", Range=" & fillOrder(i - 1)(0), vbCritical
+        Exit Sub
 End Sub
