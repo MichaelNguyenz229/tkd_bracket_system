@@ -1,7 +1,7 @@
 # AAU Tournament Data Preprocessor
 
 A Streamlit web app that takes raw AAU Taekwondo tournament registration CSVs and turns them into clean, filtered, and bracket-ready views for tournament organizers. 
-** Try here: https://tkdbracketsystem-gg6qfix2ggmx7wmfup5pz9.streamlit.app/
+## Try here: https://tkdbracketsystem-gg6qfix2ggmx7wmfup5pz9.streamlit.app/
 
 ---
 
