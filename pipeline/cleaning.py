@@ -70,6 +70,9 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
 
+    # Drop any fully duplicate columns (same name appearing more than once)
+    df = df.loc[:, ~df.columns.duplicated()]
+
     # Strip all string cells
     for col in df.select_dtypes(include="object").columns:
         df[col] = df[col].apply(lambda x: x.strip() if isinstance(x, str) else x)
@@ -86,9 +89,12 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     ).str.strip()
 
     # The survey exports the main "Please Confirm your Division Down Below" value
-    # under the column name "Team Partner Name" (platform artifact). Rename it.
-    if "Team Partner Name" in df.columns:
+    # under the column name "Team Partner Name" (platform artifact). Rename it,
+    # but only if the target column doesn't already exist (some exports have both).
+    if "Team Partner Name" in df.columns and "Please Confirm your Division Down Below" not in df.columns:
         df = df.rename(columns={"Team Partner Name": "Please Confirm your Division Down Below"})
+    elif "Team Partner Name" in df.columns and "Please Confirm your Division Down Below" in df.columns:
+        df = df.drop(columns=["Team Partner Name"])
 
     # Normalize Rank: strip extra internal whitespace (e.g. "Black " → "Black")
     if "Rank" in df.columns:
