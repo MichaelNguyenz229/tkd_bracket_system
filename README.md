@@ -6,7 +6,10 @@
 - Add "Demo Mode"
 - Finalize readme
 - Lengthen bracket visuals to see full school name
+- alert icon
+- move tabs into side bar
 - 
 
 ## Long Term
 - bracket design module
+- 
