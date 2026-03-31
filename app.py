@@ -1,5 +1,5 @@
 """
-app.py — Streamlit UI for the Taekwondo tournament data pipeline.
+app.py — Streamlit UI for the AAU tournament data pipeline.
 Keeps all display logic here; delegates all data work to pipeline.py.
 """
 
@@ -14,18 +14,74 @@ from pipeline import (
     build_bracket,
     seed_competitors,
     SPARRING_DISPLAY_COLS,
+    load_demo_data,
 )
 
-st.set_page_config(page_title="AAU Tournament Data Prepocessor", layout="wide")
-st.title("AAU Tournament Data Prepocessor")
+st.set_page_config(page_title="AAU Tournament Data Preprocessor", layout="wide")
+
+_title_col, _logo_col = st.columns([5, 1])
+_title_col.title("AAU Tournament Data Preprocessor")
+_logo_col.image("images/AAU_logo.png", use_container_width=True)
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
+_pages = ["📋 Clean Data", "🥊 Sparring", "⚠️ Data Issues", "🏆 Brackets"]
+
+if "nav_goto" in st.session_state:
+    st.session_state["nav_page"] = st.session_state.pop("nav_goto")
+if "nav_page" not in st.session_state:
+    st.session_state["nav_page"] = _pages[0]
+
 with st.sidebar:
     st.header("Upload Data")
     uploaded = st.file_uploader("Registration CSV", type=["csv"])
 
-if uploaded is None:
+    st.divider()
+
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stSidebarContent"] .nav-btn button {
+            width: 100%;
+            text-align: left;
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 14px;
+            color: #ccc;
+            cursor: pointer;
+        }
+        div[data-testid="stSidebarContent"] .nav-btn button:hover {
+            background: #2a2a2a;
+            color: #fff;
+        }
+        div[data-testid="stSidebarContent"] .nav-btn-active button {
+            background: #1a3a2a !important;
+            border-left: 3px solid #4caf50 !important;
+            color: #b7f5c8 !important;
+            font-weight: 600 !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    for _p in _pages:
+        _css_class = "nav-btn-active" if st.session_state["nav_page"] == _p else "nav-btn"
+        with st.container():
+            st.markdown(f'<div class="{_css_class}">', unsafe_allow_html=True)
+            if st.button(_p, key=f"nav_{_p}", use_container_width=True):
+                st.session_state["nav_page"] = _p
+                st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
+
+page = st.session_state["nav_page"]
+
+if uploaded is None and not st.session_state.get("demo_mode"):
     st.info("Upload a registration CSV using the sidebar to get started.")
+    if st.button("Try Demo Mode", type="primary"):
+        st.session_state["demo_mode"] = True
+        st.rerun()
     st.stop()
 
 # ── Process data ──────────────────────────────────────────────────────────────
@@ -40,15 +96,48 @@ def process(file_bytes: bytes):
     return clean_df, sparring_df, issues_df
 
 
-clean_df, sparring_df, issues_df = process(uploaded.read())
+if st.session_state.get("demo_mode") and uploaded is None:
+    clean_df, sparring_df, issues_df = load_demo_data()
+else:
+    if uploaded is None:
+        st.stop()
+    st.session_state["demo_mode"] = False
+    clean_df, sparring_df, issues_df = process(uploaded.read())
+
 flagged_names = set(issues_df["Athlete Name"].tolist()) if not issues_df.empty else set()
+
+# ── Demo mode banner ──────────────────────────────────────────────────────────
+if st.session_state.get("demo_mode"):
+    demo_col, exit_col = st.columns([6, 1])
+    demo_col.info("👀 Demo Mode — showing sample data. Upload a CSV to use real data.")
+    if exit_col.button("Exit Demo"):
+        st.session_state["demo_mode"] = False
+        st.session_state.pop("alert_dismissed", None)
+        st.rerun()
+
+
+def _issues_alert():
+    """Show a warning banner with a link to the Data Issues page and a dismiss option."""
+    if issues_df.empty or st.session_state.get("alert_dismissed"):
+        return
+    warn_col, btn_col, dismiss_col = st.columns([5, 1, 1])
+    warn_col.warning(
+        f"⚠️ {len(issues_df)} data issue(s) detected across "
+        f"{issues_df['Athlete Name'].nunique()} athlete(s)."
+    )
+    if btn_col.button("View Issues →", type="primary"):
+        st.session_state["nav_goto"] = "⚠️ Data Issues"
+        st.rerun()
+    if dismiss_col.button("Dismiss ✕"):
+        st.session_state["alert_dismissed"] = True
+        st.rerun()
 
 # ── Bracket HTML renderer ─────────────────────────────────────────────────────
 def _render_bracket_html(rounds: list, flagged_names: set, school_map: dict | None = None) -> tuple[str, int]:
     """Render a tournament bracket as a positioned HTML string with connector lines."""
-    SLOT_H  = 64   # vertical space per first-round slot
-    BOX_H   = 52   # height of each competitor box (taller to fit name + school)
-    BOX_W   = 190  # width of each competitor box
+    SLOT_H  = 72   # vertical space per first-round slot
+    BOX_H   = 58   # height of each competitor box
+    BOX_W   = 260  # width — wide enough to show full names and school names
     COL_GAP = 60   # gap between columns (where connector lines live)
     LABEL_H = 32   # space reserved at top for round labels
 
@@ -104,8 +193,7 @@ def _render_bracket_html(rounds: list, flagged_names: set, school_map: dict | No
                 border = "#f0ad4e" if is_flagged else "#4caf50"
                 school = (school_map or {}).get(slot, "")
                 school_html = (
-                    f'<div style="font-size:10px;color:#aaa;margin-top:2px;'
-                    f'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">{school}</div>'
+                    f'<div style="font-size:10px;color:#aaa;margin-top:2px;">{school}</div>'
                     if school else ""
                 )
                 p.append(
@@ -113,8 +201,7 @@ def _render_bracket_html(rounds: list, flagged_names: set, school_map: dict | No
                     f'width:{BOX_W}px;height:{BOX_H}px;border:1px solid {border};'
                     f'border-radius:6px;display:flex;flex-direction:column;justify-content:center;'
                     f'padding:0 12px;background:{bg};box-sizing:border-box;overflow:hidden;">'
-                    f'<div style="font-weight:500;font-size:13px;color:{color};'
-                    f'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">{slot}</div>'
+                    f'<div style="font-weight:500;font-size:13px;color:{color};">{slot}</div>'
                     f'{school_html}'
                     f'</div>'
                 )
@@ -144,24 +231,20 @@ def _render_bracket_html(rounds: list, flagged_names: set, school_map: dict | No
                     f'width:{x_next - x_right}px;height:1px;background:{LINE};"></div>'
                 )
             else:
-                # horizontal from a to midpoint
                 p.append(
                     f'<div style="position:absolute;left:{x_right}px;top:{cy_a:.1f}px;'
                     f'width:{x_mid - x_right:.1f}px;height:1px;background:{LINE};"></div>'
                 )
-                # horizontal from b to midpoint
                 p.append(
                     f'<div style="position:absolute;left:{x_right}px;top:{cy_b:.1f}px;'
                     f'width:{x_mid - x_right:.1f}px;height:1px;background:{LINE};"></div>'
                 )
-                # vertical connector
                 v_top = min(cy_a, cy_b)
                 v_h   = abs(cy_b - cy_a)
                 p.append(
                     f'<div style="position:absolute;left:{x_mid:.1f}px;top:{v_top:.1f}px;'
                     f'width:1px;height:{v_h:.1f}px;background:{LINE};"></div>'
                 )
-                # horizontal from midpoint to next round
                 p.append(
                     f'<div style="position:absolute;left:{x_mid:.1f}px;top:{cy_next:.1f}px;'
                     f'width:{x_next - x_mid:.1f}px;height:1px;background:{LINE};"></div>'
@@ -171,11 +254,9 @@ def _render_bracket_html(rounds: list, flagged_names: set, school_map: dict | No
     return "".join(p), canvas_h
 
 
-# ── Tabs ──────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4 = st.tabs(["📋 Clean Data", "🥊 Sparring", "⚠️ Data Issues", "🏆 Brackets"])
-
-# ── Tab 1: Clean Data ─────────────────────────────────────────────────────────
-with tab1:
+# ── Page: Clean Data ──────────────────────────────────────────────────────────
+if page == "📋 Clean Data":
+    _issues_alert()
     st.subheader(f"Clean Data — {len(clean_df)} athletes")
 
     belt_col1, gender_col1, school_col1 = st.columns([1, 1, 1])
@@ -191,7 +272,12 @@ with tab1:
         default=["Male", "Female"],
         key="clean_gender",
     )
-    group_by_school = school_col1.checkbox("Group by School Name")
+    clean_group_by = school_col1.selectbox(
+        "Group by",
+        ["None", "School Name"],
+        index=0,
+        key="clean_group_by",
+    )
 
     filtered_clean = clean_df.copy()
 
@@ -207,7 +293,7 @@ with tab1:
 
     filtered_clean = filtered_clean.reset_index(drop=True)
 
-    if group_by_school:
+    if clean_group_by == "School Name":
         for school, group in filtered_clean.groupby("School Name", sort=True):
             st.markdown(f"**{school}** — {len(group)} athlete(s)")
             st.dataframe(group.reset_index(drop=True), use_container_width=True)
@@ -221,8 +307,9 @@ with tab1:
         "text/csv",
     )
 
-# ── Tab 2: Sparring ───────────────────────────────────────────────────────────
-with tab2:
+# ── Page: Sparring ────────────────────────────────────────────────────────────
+elif page == "🥊 Sparring":
+    _issues_alert()
     total = len(sparring_df)
     olympic_count = sparring_df["Pick Event(s) Below"].str.contains(
         "Olympic Sparring", case=False, na=False
@@ -236,7 +323,6 @@ with tab2:
     col2.metric("Olympic Sparring", olympic_count)
     col3.metric("Grass Root Sparring", grass_count)
 
-    # Filters + group-by (3 columns)
     belt_col, gender_col, group_col = st.columns([1, 1, 1])
     belt_filter = belt_col.radio(
         "Belt Type",
@@ -262,7 +348,6 @@ with tab2:
     elif belt_filter == "Color Belt":
         display_df = display_df[~display_df["Division"].str.endswith("Black Belt", na=False)].reset_index(drop=True)
 
-    # Gender filter: use \bMale\b / \bFemale\b to avoid "Female" matching "Male"
     if gender_filter and len(gender_filter) < 2:
         pattern = r"\b" + gender_filter[0] + r"\b"
         display_df = display_df[display_df["Division"].str.contains(pattern, regex=True, na=False)].reset_index(drop=True)
@@ -285,8 +370,8 @@ with tab2:
                 use_container_width=True,
             )
     elif group_by == "Event Type":
-        for event_label, pattern in [("Olympic Sparring", "Olympic Sparring"), ("Grass Root Sparring", "Grass Root Sparring")]:
-            mask = display_df["Pick Event(s) Below"].str.contains(pattern, case=False, na=False)
+        for event_label, pat in [("Olympic Sparring", "Olympic Sparring"), ("Grass Root Sparring", "Grass Root Sparring")]:
+            mask = display_df["Pick Event(s) Below"].str.contains(pat, case=False, na=False)
             group = display_df[mask].reset_index(drop=True)
             st.markdown(f"**{event_label}** — {len(group)} competitor(s)")
             st.dataframe(
@@ -308,8 +393,8 @@ with tab2:
         "text/csv",
     )
 
-# ── Tab 3: Data Issues ────────────────────────────────────────────────────────
-with tab3:
+# ── Page: Data Issues ─────────────────────────────────────────────────────────
+elif page == "⚠️ Data Issues":
     if issues_df.empty:
         st.success("No data issues found!")
     else:
@@ -322,16 +407,16 @@ with tab3:
             "text/csv",
         )
 
-# ── Tab 4: Brackets ───────────────────────────────────────────────────────────
-with tab4:
-    # Color belt divisions don't get brackets — black belt only
+# ── Page: Brackets ────────────────────────────────────────────────────────────
+elif page == "🏆 Brackets":
+    _issues_alert()
     divisions = sorted(
         d for d in sparring_df["Division"].dropna().unique()
         if str(d).endswith("Black Belt")
     )
 
     if not divisions:
-        st.info("No sparring divisions found.")
+        st.info("No black belt sparring divisions found.")
     else:
         selected_division = st.selectbox("Select Division", divisions)
 
