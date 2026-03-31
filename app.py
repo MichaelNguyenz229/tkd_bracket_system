@@ -4,12 +4,15 @@ Keeps all display logic here; delegates all data work to pipeline.py.
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 from pipeline import (
     load_raw_data,
     clean_data,
     extract_sparring,
     flag_issues,
+    build_bracket,
+    seed_competitors,
     SPARRING_DISPLAY_COLS,
 )
 
@@ -40,8 +43,128 @@ def process(file_bytes: bytes):
 clean_df, sparring_df, issues_df = process(uploaded.read())
 flagged_names = set(issues_df["Athlete Name"].tolist()) if not issues_df.empty else set()
 
+# ── Bracket HTML renderer ─────────────────────────────────────────────────────
+def _render_bracket_html(rounds: list, flagged_names: set) -> tuple[str, int]:
+    """Render a tournament bracket as a positioned HTML string with connector lines."""
+    SLOT_H  = 56   # vertical space per first-round slot
+    BOX_H   = 44   # height of each competitor box
+    BOX_W   = 190  # width of each competitor box
+    COL_GAP = 60   # gap between columns (where connector lines live)
+    LABEL_H = 32   # space reserved at top for round labels
+
+    num_rounds  = len(rounds)
+    total_slots = len(rounds[0])
+    canvas_h = LABEL_H + total_slots * SLOT_H + 20
+    canvas_w = num_rounds * (BOX_W + COL_GAP) + 20
+
+    round_labels = ["Round 1", "Quarterfinals", "Semifinals", "Finals", "Champion"]
+    while len(round_labels) < num_rounds:
+        round_labels.insert(0, f"Round {num_rounds - len(round_labels) + 1}")
+    labels = round_labels[-num_rounds:]
+
+    p = [
+        f'<div style="position:relative;width:{canvas_w}px;height:{canvas_h}px;'
+        f'font-family:sans-serif;background:transparent;">'
+    ]
+
+    # Round labels
+    for r_idx, label in enumerate(labels):
+        x = r_idx * (BOX_W + COL_GAP)
+        p.append(
+            f'<div style="position:absolute;left:{x}px;top:0;width:{BOX_W}px;'
+            f'text-align:center;color:#aaa;font-size:11px;font-weight:700;'
+            f'text-transform:uppercase;letter-spacing:1px;">{label}</div>'
+        )
+
+    # Competitor boxes
+    for r_idx, round_slots in enumerate(rounds):
+        span = 2 ** r_idx
+        x = r_idx * (BOX_W + COL_GAP)
+        for s_idx, slot in enumerate(round_slots):
+            cy  = LABEL_H + (s_idx * span + (span - 1) / 2) * SLOT_H + SLOT_H / 2
+            top = cy - BOX_H / 2
+            if slot is None:
+                p.append(
+                    f'<div style="position:absolute;left:{x}px;top:{top:.1f}px;'
+                    f'width:{BOX_W}px;height:{BOX_H}px;border:1px dashed #444;'
+                    f'border-radius:6px;display:flex;align-items:center;padding:0 12px;'
+                    f'color:#555;font-size:12px;box-sizing:border-box;">BYE</div>'
+                )
+            elif slot == "TBD":
+                p.append(
+                    f'<div style="position:absolute;left:{x}px;top:{top:.1f}px;'
+                    f'width:{BOX_W}px;height:{BOX_H}px;border:1px solid #555;'
+                    f'border-radius:6px;display:flex;align-items:center;padding:0 12px;'
+                    f'color:#999;background:#2a2a2a;font-size:13px;box-sizing:border-box;">TBD</div>'
+                )
+            else:
+                is_flagged = slot in flagged_names
+                bg     = "#7a5c00" if is_flagged else "#1a4d2e"
+                color  = "#ffe08a" if is_flagged else "#b7f5c8"
+                border = "#f0ad4e" if is_flagged else "#4caf50"
+                p.append(
+                    f'<div style="position:absolute;left:{x}px;top:{top:.1f}px;'
+                    f'width:{BOX_W}px;height:{BOX_H}px;border:1px solid {border};'
+                    f'border-radius:6px;display:flex;align-items:center;padding:0 12px;'
+                    f'color:{color};background:{bg};font-weight:500;font-size:13px;'
+                    f'box-sizing:border-box;overflow:hidden;white-space:nowrap;'
+                    f'text-overflow:ellipsis;">{slot}</div>'
+                )
+
+    # Connector lines
+    LINE = "#555"
+    for r_idx in range(num_rounds - 1):
+        span    = 2 ** r_idx
+        x_right = r_idx * (BOX_W + COL_GAP) + BOX_W
+        x_next  = (r_idx + 1) * (BOX_W + COL_GAP)
+        x_mid   = (x_right + x_next) / 2
+        slots   = rounds[r_idx]
+
+        for i in range(0, len(slots), 2):
+            a = slots[i]
+            b = slots[i + 1] if i + 1 < len(slots) else None
+            cy_a    = LABEL_H + (i * span + (span - 1) / 2) * SLOT_H + SLOT_H / 2
+            cy_b    = LABEL_H + ((i + 1) * span + (span - 1) / 2) * SLOT_H + SLOT_H / 2
+            cy_next = (cy_a + cy_b) / 2
+
+            if a is None and b is None:
+                continue
+            elif a is None or b is None:
+                active_cy = cy_a if b is None else cy_b
+                p.append(
+                    f'<div style="position:absolute;left:{x_right}px;top:{active_cy:.1f}px;'
+                    f'width:{x_next - x_right}px;height:1px;background:{LINE};"></div>'
+                )
+            else:
+                # horizontal from a to midpoint
+                p.append(
+                    f'<div style="position:absolute;left:{x_right}px;top:{cy_a:.1f}px;'
+                    f'width:{x_mid - x_right:.1f}px;height:1px;background:{LINE};"></div>'
+                )
+                # horizontal from b to midpoint
+                p.append(
+                    f'<div style="position:absolute;left:{x_right}px;top:{cy_b:.1f}px;'
+                    f'width:{x_mid - x_right:.1f}px;height:1px;background:{LINE};"></div>'
+                )
+                # vertical connector
+                v_top = min(cy_a, cy_b)
+                v_h   = abs(cy_b - cy_a)
+                p.append(
+                    f'<div style="position:absolute;left:{x_mid:.1f}px;top:{v_top:.1f}px;'
+                    f'width:1px;height:{v_h:.1f}px;background:{LINE};"></div>'
+                )
+                # horizontal from midpoint to next round
+                p.append(
+                    f'<div style="position:absolute;left:{x_mid:.1f}px;top:{cy_next:.1f}px;'
+                    f'width:{x_next - x_mid:.1f}px;height:1px;background:{LINE};"></div>'
+                )
+
+    p.append("</div>")
+    return "".join(p), canvas_h
+
+
 # ── Tabs ──────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3 = st.tabs(["📋 Clean Data", "🥊 Sparring", "⚠️ Data Issues"])
+tab1, tab2, tab3, tab4 = st.tabs(["📋 Clean Data", "🥊 Sparring", "⚠️ Data Issues", "🏆 Brackets"])
 
 # ── Tab 1: Clean Data ─────────────────────────────────────────────────────────
 with tab1:
@@ -69,20 +192,43 @@ with tab2:
     col2.metric("Olympic Sparring", olympic_count)
     col3.metric("Grass Root Sparring", grass_count)
 
-    # Build display DataFrame: required columns only, sorted by Division
+    # Group-by toggle
+    group_by = st.selectbox(
+        "Group by",
+        ["None", "Division", "Event Type"],
+        index=0,
+    )
+
     display_cols = [c for c in SPARRING_DISPLAY_COLS if c in sparring_df.columns]
     display_df = sparring_df[display_cols].sort_values("Division").reset_index(drop=True)
 
-    # Highlight flagged athletes in yellow
     def highlight_flagged(row: pd.Series):
         if row["Athlete Name"] in flagged_names:
-            return ["background-color: #fff3cd"] * len(row)
+            return ["background-color: #7a5c00; color: #ffe08a"] * len(row)
         return [""] * len(row)
 
-    st.dataframe(
-        display_df.style.apply(highlight_flagged, axis=1),
-        use_container_width=True,
-    )
+    if group_by == "None":
+        st.dataframe(
+            display_df.style.apply(highlight_flagged, axis=1),
+            use_container_width=True,
+        )
+    elif group_by == "Division":
+        for division, group in display_df.groupby("Division", sort=True):
+            st.markdown(f"**{division}** — {len(group)} competitor(s)")
+            st.dataframe(
+                group.reset_index(drop=True).style.apply(highlight_flagged, axis=1),
+                use_container_width=True,
+            )
+    elif group_by == "Event Type":
+        for event_label, pattern in [("Olympic Sparring", "Olympic Sparring"), ("Grass Root Sparring", "Grass Root Sparring")]:
+            mask = display_df["Pick Event(s) Below"].str.contains(pattern, case=False, na=False)
+            group = display_df[mask].reset_index(drop=True)
+            st.markdown(f"**{event_label}** — {len(group)} competitor(s)")
+            st.dataframe(
+                group.style.apply(highlight_flagged, axis=1),
+                use_container_width=True,
+            )
+
     st.download_button(
         "⬇ Download Sparring Data CSV",
         display_df.to_csv(index=False),
@@ -103,3 +249,27 @@ with tab3:
             "data_issues.csv",
             "text/csv",
         )
+
+# ── Tab 4: Brackets ───────────────────────────────────────────────────────────
+with tab4:
+    divisions = sorted(sparring_df["Division"].dropna().unique().tolist())
+
+    if not divisions:
+        st.info("No sparring divisions found.")
+    else:
+        selected_division = st.selectbox("Select Division", divisions)
+
+        div_df = sparring_df[sparring_df["Division"] == selected_division]
+        seeded = seed_competitors(div_df)
+        n = len(seeded)
+
+        st.markdown(f"**{selected_division}** — {n} competitor(s)")
+
+        if n < 2:
+            st.warning("Need at least 2 competitors to generate a bracket.")
+            if n == 1:
+                st.write(f"🏆 {seeded[0]} — sole competitor")
+        else:
+            rounds = build_bracket(seeded)
+            html, height = _render_bracket_html(rounds, flagged_names)
+            components.html(html, height=height + 20, scrolling=True)

@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(uv run:*)",
+      "Bash(where uv:*)",
+      "Read(//c/Users/micha/AppData/Roaming/uv/bin/**)",
+      "Read(//c/Users/micha/.local/bin/**)",
+      "Read(//c/Users/micha/**)",
+      "Bash(cmd.exe /c \"where uv\")",
+      "Bash(cmd.exe /c \"where streamlit\")",
+      "Bash(cmd.exe /c \"where uv 2>&1 && where streamlit 2>&1\")",
+      "Bash(powershell.exe -Command \"irm https://astral.sh/uv/install.ps1 | iex\")",
+      "Bash(/c/Users/micha/.local/bin/uv run:*)",
+      "Bash(/c/Users/micha/.local/bin/uv init:*)",
+      "Bash(/c/Users/micha/.local/bin/uv add:*)",
+      "Bash(taskkill //F //IM streamlit.exe)",
+      "Bash(taskkill //F //IM python.exe)"
+    ]
+  }
+}

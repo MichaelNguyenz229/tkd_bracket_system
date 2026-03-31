@@ -7,6 +7,7 @@ Public API re-exported here so app.py and other callers use simple imports:
 
 from .cleaning import load_raw_data, clean_data, TOURNAMENT_YEAR, WORLD_CLASS_COLS, CLEAN_COLS
 from .sparring import extract_sparring, assign_division, flag_issues, SPARRING_DISPLAY_COLS
+from .bracket import build_bracket, seed_competitors
 
 __all__ = [
     "load_raw_data",
@@ -18,4 +19,6 @@ __all__ = [
     "assign_division",
     "flag_issues",
     "SPARRING_DISPLAY_COLS",
+    "build_bracket",
+    "seed_competitors",
 ]
