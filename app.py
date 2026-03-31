@@ -16,8 +16,8 @@ from pipeline import (
     SPARRING_DISPLAY_COLS,
 )
 
-st.set_page_config(page_title="TKD Tournament Pipeline", layout="wide")
-st.title("Taekwondo Tournament Pipeline")
+st.set_page_config(page_title="AAU Tournament Pipeline", layout="wide")
+st.title("AAU Tournament Pipeline")
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -44,10 +44,10 @@ clean_df, sparring_df, issues_df = process(uploaded.read())
 flagged_names = set(issues_df["Athlete Name"].tolist()) if not issues_df.empty else set()
 
 # ── Bracket HTML renderer ─────────────────────────────────────────────────────
-def _render_bracket_html(rounds: list, flagged_names: set) -> tuple[str, int]:
+def _render_bracket_html(rounds: list, flagged_names: set, school_map: dict | None = None) -> tuple[str, int]:
     """Render a tournament bracket as a positioned HTML string with connector lines."""
-    SLOT_H  = 56   # vertical space per first-round slot
-    BOX_H   = 44   # height of each competitor box
+    SLOT_H  = 64   # vertical space per first-round slot
+    BOX_H   = 52   # height of each competitor box (taller to fit name + school)
     BOX_W   = 190  # width of each competitor box
     COL_GAP = 60   # gap between columns (where connector lines live)
     LABEL_H = 32   # space reserved at top for round labels
@@ -102,13 +102,21 @@ def _render_bracket_html(rounds: list, flagged_names: set) -> tuple[str, int]:
                 bg     = "#7a5c00" if is_flagged else "#1a4d2e"
                 color  = "#ffe08a" if is_flagged else "#b7f5c8"
                 border = "#f0ad4e" if is_flagged else "#4caf50"
+                school = (school_map or {}).get(slot, "")
+                school_html = (
+                    f'<div style="font-size:10px;color:#aaa;margin-top:2px;'
+                    f'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">{school}</div>'
+                    if school else ""
+                )
                 p.append(
                     f'<div style="position:absolute;left:{x}px;top:{top:.1f}px;'
                     f'width:{BOX_W}px;height:{BOX_H}px;border:1px solid {border};'
-                    f'border-radius:6px;display:flex;align-items:center;padding:0 12px;'
-                    f'color:{color};background:{bg};font-weight:500;font-size:13px;'
-                    f'box-sizing:border-box;overflow:hidden;white-space:nowrap;'
-                    f'text-overflow:ellipsis;">{slot}</div>'
+                    f'border-radius:6px;display:flex;flex-direction:column;justify-content:center;'
+                    f'padding:0 12px;background:{bg};box-sizing:border-box;overflow:hidden;">'
+                    f'<div style="font-weight:500;font-size:13px;color:{color};'
+                    f'overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">{slot}</div>'
+                    f'{school_html}'
+                    f'</div>'
                 )
 
     # Connector lines
@@ -169,10 +177,46 @@ tab1, tab2, tab3, tab4 = st.tabs(["📋 Clean Data", "🥊 Sparring", "⚠️ Da
 # ── Tab 1: Clean Data ─────────────────────────────────────────────────────────
 with tab1:
     st.subheader(f"Clean Data — {len(clean_df)} athletes")
-    st.dataframe(clean_df, use_container_width=True)
+
+    belt_col1, gender_col1, school_col1 = st.columns([1, 1, 1])
+    clean_belt_filter = belt_col1.radio(
+        "Belt Type",
+        ["All", "Black Belt", "Color Belt"],
+        horizontal=True,
+        key="clean_belt",
+    )
+    clean_gender_filter = gender_col1.multiselect(
+        "Gender",
+        ["Male", "Female"],
+        default=["Male", "Female"],
+        key="clean_gender",
+    )
+    group_by_school = school_col1.checkbox("Group by School Name")
+
+    filtered_clean = clean_df.copy()
+
+    if clean_belt_filter == "Black Belt":
+        filtered_clean = filtered_clean[filtered_clean["Rank"].str.contains("Black", case=False, na=False)]
+    elif clean_belt_filter == "Color Belt":
+        filtered_clean = filtered_clean[~filtered_clean["Rank"].str.contains("Black", case=False, na=False)]
+
+    if clean_gender_filter and len(clean_gender_filter) < 2:
+        filtered_clean = filtered_clean[
+            filtered_clean["Gender"].str.strip().str.lower() == clean_gender_filter[0].lower()
+        ]
+
+    filtered_clean = filtered_clean.reset_index(drop=True)
+
+    if group_by_school:
+        for school, group in filtered_clean.groupby("School Name", sort=True):
+            st.markdown(f"**{school}** — {len(group)} athlete(s)")
+            st.dataframe(group.reset_index(drop=True), use_container_width=True)
+    else:
+        st.dataframe(filtered_clean, use_container_width=True)
+
     st.download_button(
         "⬇ Download Clean Data CSV",
-        clean_df.to_csv(index=False),
+        filtered_clean.to_csv(index=False),
         "clean_data.csv",
         "text/csv",
     )
@@ -192,15 +236,36 @@ with tab2:
     col2.metric("Olympic Sparring", olympic_count)
     col3.metric("Grass Root Sparring", grass_count)
 
-    # Group-by toggle
-    group_by = st.selectbox(
+    # Filters + group-by (3 columns)
+    belt_col, gender_col, group_col = st.columns([1, 1, 1])
+    belt_filter = belt_col.radio(
+        "Belt Type",
+        ["All", "Black Belt", "Color Belt"],
+        horizontal=True,
+    )
+    gender_filter = gender_col.multiselect(
+        "Gender",
+        ["Male", "Female"],
+        default=["Male", "Female"],
+    )
+    group_by = group_col.selectbox(
         "Group by",
-        ["None", "Division", "Event Type"],
+        ["None", "Division", "Event Type", "School Name"],
         index=0,
     )
 
     display_cols = [c for c in SPARRING_DISPLAY_COLS if c in sparring_df.columns]
     display_df = sparring_df[display_cols].sort_values("Division").reset_index(drop=True)
+
+    if belt_filter == "Black Belt":
+        display_df = display_df[display_df["Division"].str.endswith("Black Belt", na=False)].reset_index(drop=True)
+    elif belt_filter == "Color Belt":
+        display_df = display_df[~display_df["Division"].str.endswith("Black Belt", na=False)].reset_index(drop=True)
+
+    # Gender filter: use \bMale\b / \bFemale\b to avoid "Female" matching "Male"
+    if gender_filter and len(gender_filter) < 2:
+        pattern = r"\b" + gender_filter[0] + r"\b"
+        display_df = display_df[display_df["Division"].str.contains(pattern, regex=True, na=False)].reset_index(drop=True)
 
     def highlight_flagged(row: pd.Series):
         if row["Athlete Name"] in flagged_names:
@@ -228,6 +293,13 @@ with tab2:
                 group.style.apply(highlight_flagged, axis=1),
                 use_container_width=True,
             )
+    elif group_by == "School Name":
+        for school, group in display_df.groupby("School Name", sort=True):
+            st.markdown(f"**{school}** — {len(group)} competitor(s)")
+            st.dataframe(
+                group.reset_index(drop=True).style.apply(highlight_flagged, axis=1),
+                use_container_width=True,
+            )
 
     st.download_button(
         "⬇ Download Sparring Data CSV",
@@ -252,7 +324,11 @@ with tab3:
 
 # ── Tab 4: Brackets ───────────────────────────────────────────────────────────
 with tab4:
-    divisions = sorted(sparring_df["Division"].dropna().unique().tolist())
+    # Color belt divisions don't get brackets — black belt only
+    divisions = sorted(
+        d for d in sparring_df["Division"].dropna().unique()
+        if str(d).endswith("Black Belt")
+    )
 
     if not divisions:
         st.info("No sparring divisions found.")
@@ -261,6 +337,7 @@ with tab4:
 
         div_df = sparring_df[sparring_df["Division"] == selected_division]
         seeded = seed_competitors(div_df)
+        school_map = dict(zip(div_df["Athlete Name"], div_df["School Name"]))
         n = len(seeded)
 
         st.markdown(f"**{selected_division}** — {n} competitor(s)")
@@ -271,5 +348,5 @@ with tab4:
                 st.write(f"🏆 {seeded[0]} — sole competitor")
         else:
             rounds = build_bracket(seeded)
-            html, height = _render_bracket_html(rounds, flagged_names)
+            html, height = _render_bracket_html(rounds, flagged_names, school_map)
             components.html(html, height=height + 20, scrolling=True)
