@@ -6,7 +6,7 @@
 - Add "Demo Mode"
 - Finalize readme
 - Lengthen bracket visuals to see full school name
-- alert icon
+- alert icon, if clicked will be taken to data issues tab
 - move tabs into side bar
 - 
 
