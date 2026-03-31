@@ -16,8 +16,8 @@ from pipeline import (
     SPARRING_DISPLAY_COLS,
 )
 
-st.set_page_config(page_title="AAU Tournament Pipeline", layout="wide")
-st.title("AAU Tournament Pipeline")
+st.set_page_config(page_title="AAU Tournament Data Prepocessor", layout="wide")
+st.title("AAU Tournament Data Prepocessor")
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
