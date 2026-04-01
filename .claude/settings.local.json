@@ -14,7 +14,13 @@
       "Bash(/c/Users/micha/.local/bin/uv init:*)",
       "Bash(/c/Users/micha/.local/bin/uv add:*)",
       "Bash(taskkill //F //IM streamlit.exe)",
-      "Bash(taskkill //F //IM python.exe)"
+      "Bash(taskkill //F //IM python.exe)",
+      "Bash(git rm:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)"
     ]
   }
 }

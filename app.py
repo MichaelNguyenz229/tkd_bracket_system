@@ -34,6 +34,9 @@ if "nav_page" not in st.session_state:
 with st.sidebar:
     st.header("Upload Data")
     uploaded = st.file_uploader("Registration CSV", type=["csv"])
+    if st.button("Try Demo Mode", use_container_width=True):
+        st.session_state["demo_mode"] = True
+        st.rerun()
 
     st.divider()
 
@@ -78,10 +81,7 @@ with st.sidebar:
 page = st.session_state["nav_page"]
 
 if uploaded is None and not st.session_state.get("demo_mode"):
-    st.info("Upload a registration CSV using the sidebar to get started.")
-    if st.button("Try Demo Mode", type="primary"):
-        st.session_state["demo_mode"] = True
-        st.rerun()
+    st.info("Upload a registration CSV or try Demo Mode using the sidebar.")
     st.stop()
 
 # ── Process data ──────────────────────────────────────────────────────────────
@@ -418,7 +418,12 @@ elif page == "🏆 Brackets":
     if not divisions:
         st.info("No black belt sparring divisions found.")
     else:
-        selected_division = st.selectbox("Select Division", divisions)
+        _div_counts = sparring_df[sparring_df["Division"].isin(divisions)].groupby("Division").size()
+        _div_labels = {d: f"{d} — {_div_counts.get(d, 0)} competitor(s)" for d in divisions}
+        _label_to_div = {v: k for k, v in _div_labels.items()}
+
+        selected_label = st.selectbox("Select Division", list(_div_labels.values()))
+        selected_division = _label_to_div[selected_label]
 
         div_df = sparring_df[sparring_df["Division"] == selected_division]
         seeded = seed_competitors(div_df)
