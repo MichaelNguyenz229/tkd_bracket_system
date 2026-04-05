@@ -30,6 +30,7 @@ WORLD_CLASS_COLS = [
 CLEAN_COLS = [
     "Athlete Name",
     "Date of Birth",
+    "Age",
     "Gender",
     "Rank",
     "Dan",
@@ -88,6 +89,12 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
         + df["Athlete Last Name"].fillna("").str.strip()
     ).str.strip()
 
+    # Compute Age from Date of Birth
+    if "Date of Birth" in df.columns:
+        df["Age"] = df["Date of Birth"].apply(
+            lambda x: TOURNAMENT_YEAR - get_birth_year(x) if get_birth_year(x) is not None else None
+        )
+
     # The survey exports the main "Please Confirm your Division Down Below" value
     # under the column name "Team Partner Name" (platform artifact). Rename it,
     # but only if the target column doesn't already exist (some exports have both).
@@ -106,9 +113,15 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
             lambda x: ", ".join(e.strip() for e in x.split(",")) if isinstance(x, str) else x
         )
 
-    # Abs-value any negative weights — negative sign is a data entry error
+    # Replace "Other" school names with the manually-typed value from the
+    # adjacent "School name(other)" column (registration form artifact).
+    if "School Name" in df.columns and "School name(other)" in df.columns:
+        other_mask = df["School Name"].str.strip().str.lower() == "other"
+        df.loc[other_mask, "School Name"] = df.loc[other_mask, "School name(other)"].str.strip()
+
+    # Abs-value any negative weights and convert to integer
     if "Weight in KG" in df.columns:
-        df["Weight in KG"] = pd.to_numeric(df["Weight in KG"], errors="coerce").abs()
+        df["Weight in KG"] = pd.to_numeric(df["Weight in KG"], errors="coerce").abs().round(0).astype("Int64")
 
     # Keep only columns that exist in this export
     cols_to_keep = [c for c in CLEAN_COLS if c in df.columns]

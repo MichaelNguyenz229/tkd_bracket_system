@@ -7,7 +7,7 @@ multiple schools, and a couple of intentional data issues.
 """
 
 import pandas as pd
-from .cleaning import TOURNAMENT_YEAR, WORLD_CLASS_COLS
+from .cleaning import TOURNAMENT_YEAR, WORLD_CLASS_COLS, get_birth_year
 from .sparring import extract_sparring, flag_issues, assign_division
 
 _SCHOOLS = [
@@ -80,7 +80,12 @@ def _make_clean_df() -> pd.DataFrame:
         row.setdefault("Freestyle Team Partner Name (5)", "")
         row.setdefault("Freestyle Team Partner Name (6)", "")
 
-    return pd.DataFrame(rows).reset_index(drop=True)
+    df = pd.DataFrame(rows)
+    # Compute Age from Date of Birth (same as clean_data does)
+    df["Age"] = df["Date of Birth"].apply(
+        lambda x: TOURNAMENT_YEAR - get_birth_year(x) if get_birth_year(x) is not None else None
+    )
+    return df.reset_index(drop=True)
 
 
 def load_demo_data() -> tuple:

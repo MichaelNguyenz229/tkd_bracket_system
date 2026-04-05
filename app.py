@@ -3,17 +3,18 @@ app.py — Streamlit UI for the AAU tournament data pipeline.
 Keeps all display logic here; delegates all data work to pipeline.py.
 """
 
+import json
 import streamlit as st
-import streamlit.components.v1 as components
 import pandas as pd
 from pipeline import (
     load_raw_data,
     clean_data,
     extract_sparring,
+    assign_division,
     flag_issues,
-    build_bracket,
     seed_competitors,
     SPARRING_DISPLAY_COLS,
+    WORLD_CLASS_COLS,
     load_demo_data,
 )
 
@@ -24,7 +25,7 @@ _title_col.title("AAU Tournament Data Preprocessor")
 _logo_col.image("images/AAU_logo.png", use_container_width=True)
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
-_pages = ["📋 Clean Data", "🥊 Sparring", "⚠️ Data Issues", "🏆 Brackets"]
+_pages = ["📋 Clean Data", "📊 Reports", "🥊 Sparring", "⚠️ Data Issues"]
 
 if "nav_goto" in st.session_state:
     st.session_state["nav_page"] = st.session_state.pop("nav_goto")
@@ -132,127 +133,6 @@ def _issues_alert():
         st.session_state["alert_dismissed"] = True
         st.rerun()
 
-# ── Bracket HTML renderer ─────────────────────────────────────────────────────
-def _render_bracket_html(rounds: list, flagged_names: set, school_map: dict | None = None) -> tuple[str, int]:
-    """Render a tournament bracket as a positioned HTML string with connector lines."""
-    SLOT_H  = 72   # vertical space per first-round slot
-    BOX_H   = 58   # height of each competitor box
-    BOX_W   = 260  # width — wide enough to show full names and school names
-    COL_GAP = 60   # gap between columns (where connector lines live)
-    LABEL_H = 32   # space reserved at top for round labels
-
-    num_rounds  = len(rounds)
-    total_slots = len(rounds[0])
-    canvas_h = LABEL_H + total_slots * SLOT_H + 20
-    canvas_w = num_rounds * (BOX_W + COL_GAP) + 20
-
-    round_labels = ["Round 1", "Quarterfinals", "Semifinals", "Finals", "Champion"]
-    while len(round_labels) < num_rounds:
-        round_labels.insert(0, f"Round {num_rounds - len(round_labels) + 1}")
-    labels = round_labels[-num_rounds:]
-
-    p = [
-        f'<div style="position:relative;width:{canvas_w}px;height:{canvas_h}px;'
-        f'font-family:sans-serif;background:transparent;">'
-    ]
-
-    # Round labels
-    for r_idx, label in enumerate(labels):
-        x = r_idx * (BOX_W + COL_GAP)
-        p.append(
-            f'<div style="position:absolute;left:{x}px;top:0;width:{BOX_W}px;'
-            f'text-align:center;color:#aaa;font-size:11px;font-weight:700;'
-            f'text-transform:uppercase;letter-spacing:1px;">{label}</div>'
-        )
-
-    # Competitor boxes
-    for r_idx, round_slots in enumerate(rounds):
-        span = 2 ** r_idx
-        x = r_idx * (BOX_W + COL_GAP)
-        for s_idx, slot in enumerate(round_slots):
-            cy  = LABEL_H + (s_idx * span + (span - 1) / 2) * SLOT_H + SLOT_H / 2
-            top = cy - BOX_H / 2
-            if slot is None:
-                p.append(
-                    f'<div style="position:absolute;left:{x}px;top:{top:.1f}px;'
-                    f'width:{BOX_W}px;height:{BOX_H}px;border:1px dashed #444;'
-                    f'border-radius:6px;display:flex;align-items:center;padding:0 12px;'
-                    f'color:#555;font-size:12px;box-sizing:border-box;">BYE</div>'
-                )
-            elif slot == "TBD":
-                p.append(
-                    f'<div style="position:absolute;left:{x}px;top:{top:.1f}px;'
-                    f'width:{BOX_W}px;height:{BOX_H}px;border:1px solid #555;'
-                    f'border-radius:6px;display:flex;align-items:center;padding:0 12px;'
-                    f'color:#999;background:#2a2a2a;font-size:13px;box-sizing:border-box;">TBD</div>'
-                )
-            else:
-                is_flagged = slot in flagged_names
-                bg     = "#7a5c00" if is_flagged else "#1a4d2e"
-                color  = "#ffe08a" if is_flagged else "#b7f5c8"
-                border = "#f0ad4e" if is_flagged else "#4caf50"
-                school = (school_map or {}).get(slot, "")
-                school_html = (
-                    f'<div style="font-size:10px;color:#aaa;margin-top:2px;">{school}</div>'
-                    if school else ""
-                )
-                p.append(
-                    f'<div style="position:absolute;left:{x}px;top:{top:.1f}px;'
-                    f'width:{BOX_W}px;height:{BOX_H}px;border:1px solid {border};'
-                    f'border-radius:6px;display:flex;flex-direction:column;justify-content:center;'
-                    f'padding:0 12px;background:{bg};box-sizing:border-box;overflow:hidden;">'
-                    f'<div style="font-weight:500;font-size:13px;color:{color};">{slot}</div>'
-                    f'{school_html}'
-                    f'</div>'
-                )
-
-    # Connector lines
-    LINE = "#555"
-    for r_idx in range(num_rounds - 1):
-        span    = 2 ** r_idx
-        x_right = r_idx * (BOX_W + COL_GAP) + BOX_W
-        x_next  = (r_idx + 1) * (BOX_W + COL_GAP)
-        x_mid   = (x_right + x_next) / 2
-        slots   = rounds[r_idx]
-
-        for i in range(0, len(slots), 2):
-            a = slots[i]
-            b = slots[i + 1] if i + 1 < len(slots) else None
-            cy_a    = LABEL_H + (i * span + (span - 1) / 2) * SLOT_H + SLOT_H / 2
-            cy_b    = LABEL_H + ((i + 1) * span + (span - 1) / 2) * SLOT_H + SLOT_H / 2
-            cy_next = (cy_a + cy_b) / 2
-
-            if a is None and b is None:
-                continue
-            elif a is None or b is None:
-                active_cy = cy_a if b is None else cy_b
-                p.append(
-                    f'<div style="position:absolute;left:{x_right}px;top:{active_cy:.1f}px;'
-                    f'width:{x_next - x_right}px;height:1px;background:{LINE};"></div>'
-                )
-            else:
-                p.append(
-                    f'<div style="position:absolute;left:{x_right}px;top:{cy_a:.1f}px;'
-                    f'width:{x_mid - x_right:.1f}px;height:1px;background:{LINE};"></div>'
-                )
-                p.append(
-                    f'<div style="position:absolute;left:{x_right}px;top:{cy_b:.1f}px;'
-                    f'width:{x_mid - x_right:.1f}px;height:1px;background:{LINE};"></div>'
-                )
-                v_top = min(cy_a, cy_b)
-                v_h   = abs(cy_b - cy_a)
-                p.append(
-                    f'<div style="position:absolute;left:{x_mid:.1f}px;top:{v_top:.1f}px;'
-                    f'width:1px;height:{v_h:.1f}px;background:{LINE};"></div>'
-                )
-                p.append(
-                    f'<div style="position:absolute;left:{x_mid:.1f}px;top:{cy_next:.1f}px;'
-                    f'width:{x_next - x_mid:.1f}px;height:1px;background:{LINE};"></div>'
-                )
-
-    p.append("</div>")
-    return "".join(p), canvas_h
-
 
 # ── Page: Clean Data ──────────────────────────────────────────────────────────
 if page == "📋 Clean Data":
@@ -307,9 +187,106 @@ if page == "📋 Clean Data":
         "text/csv",
     )
 
+# ── Page: Reports ────────────────────────────────────────────────────────────
+elif page == "📊 Reports":
+    _issues_alert()
+
+    # Build report dataframe: slim columns + computed division for all athletes
+    report_df = clean_df.copy()
+    wc_cols = [c for c in WORLD_CLASS_COLS if c in report_df.columns]
+    report_df["Division"] = report_df.apply(
+        lambda row: assign_division(row, wc_cols), axis=1
+    )
+    # Non-sparring athletes get "—" for division
+    sparring_mask = report_df["Pick Event(s) Below"].str.contains(
+        r"(?i)(?:olympic sparring|grass root sparring)", regex=True, na=False
+    )
+    report_df.loc[~sparring_mask, "Division"] = "—"
+
+    report_cols = ["Athlete Name", "Gender", "Age", "Rank", "School Name", "Division", "Pick Event(s) Below"]
+    report_cols = [c for c in report_cols if c in report_df.columns]
+    report_df = report_df[report_cols].reset_index(drop=True)
+
+    st.subheader(f"Reports — {len(report_df)} athletes")
+
+    rpt_belt_col, rpt_gender_col, rpt_group_col = st.columns([1, 1, 1])
+    rpt_belt_filter = rpt_belt_col.radio(
+        "Belt Type",
+        ["All", "Black Belt", "Color Belt"],
+        horizontal=True,
+        key="rpt_belt",
+    )
+    rpt_gender_filter = rpt_gender_col.multiselect(
+        "Gender",
+        ["Male", "Female"],
+        default=["Male", "Female"],
+        key="rpt_gender",
+    )
+    rpt_group_by = rpt_group_col.selectbox(
+        "Group by",
+        ["None", "School Name", "Event"],
+        index=0,
+        key="rpt_group_by",
+    )
+
+    if rpt_belt_filter == "Black Belt":
+        report_df = report_df[report_df["Rank"].str.contains("Black", case=False, na=False)]
+    elif rpt_belt_filter == "Color Belt":
+        report_df = report_df[~report_df["Rank"].str.contains("Black", case=False, na=False)]
+
+    if rpt_gender_filter and len(rpt_gender_filter) < 2:
+        report_df = report_df[
+            report_df["Gender"].str.strip().str.lower() == rpt_gender_filter[0].lower()
+        ]
+
+    report_df = report_df.reset_index(drop=True)
+
+    visible_cols = st.multiselect(
+        "Columns",
+        report_df.columns.tolist(),
+        default=report_df.columns.tolist(),
+        key="rpt_columns",
+    )
+    if visible_cols:
+        report_df = report_df[visible_cols]
+    else:
+        st.warning("Select at least one column to display.")
+        st.stop()
+
+    if rpt_group_by == "None":
+        st.dataframe(report_df, use_container_width=True, hide_index=True)
+    elif rpt_group_by == "School Name":
+        for school, group in report_df.groupby("School Name", sort=True):
+            st.markdown(f"**{school}** — {len(group)} athlete(s)")
+            st.dataframe(group.reset_index(drop=True), use_container_width=True, hide_index=True)
+    elif rpt_group_by == "Event":
+        # Explode comma-separated events so each athlete appears under each event
+        all_events = set()
+        for val in report_df["Pick Event(s) Below"].dropna():
+            for e in val.split(","):
+                e = e.strip()
+                if e:
+                    all_events.add(e)
+        for event in sorted(all_events):
+            mask = report_df["Pick Event(s) Below"].str.contains(
+                event, case=False, na=False, regex=False
+            )
+            group = report_df[mask].reset_index(drop=True)
+            if not group.empty:
+                st.markdown(f"**{event}** — {len(group)} athlete(s)")
+                st.dataframe(group, use_container_width=True, hide_index=True)
+
+    st.download_button(
+        "⬇ Download Report CSV",
+        report_df.to_csv(index=False),
+        "report.csv",
+        "text/csv",
+    )
+
 # ── Page: Sparring ────────────────────────────────────────────────────────────
 elif page == "🥊 Sparring":
     _issues_alert()
+    st.subheader("Sparring")
     total = len(sparring_df)
     olympic_count = sparring_df["Pick Event(s) Below"].str.contains(
         "Olympic Sparring", case=False, na=False
@@ -393,8 +370,53 @@ elif page == "🥊 Sparring":
         "text/csv",
     )
 
+    # ── Division JSON exports (moved from Brackets tab) ──────────────────
+    bb_divisions = sorted(
+        d for d in sparring_df["Division"].dropna().unique()
+        if str(d).endswith("Black Belt")
+    )
+
+    if bb_divisions:
+        def _division_to_json(division_name: str) -> dict:
+            df = sparring_df[sparring_df["Division"] == division_name]
+            names = seed_competitors(df)
+            schools = dict(zip(df["Athlete Name"], df["School Name"]))
+            return {
+                "division": division_name,
+                "competitors": [
+                    {"id": str(i + 1), "name": name, "school": schools.get(name, ""), "photoUrl": ""}
+                    for i, name in enumerate(names)
+                ],
+            }
+
+        st.divider()
+        sel_col, _ = st.columns([1, 2])
+        _div_counts = sparring_df[sparring_df["Division"].isin(bb_divisions)].groupby("Division").size()
+        _div_labels = {d: f"{d} — {_div_counts.get(d, 0)} competitor(s)" for d in bb_divisions}
+        _label_to_div = {v: k for k, v in _div_labels.items()}
+        selected_label = sel_col.selectbox("Export Division", list(_div_labels.values()))
+        selected_division = _label_to_div[selected_label]
+
+        exp_col1, exp_col2 = st.columns(2)
+        exp_col1.download_button(
+            "Export This Division (JSON)",
+            json.dumps(_division_to_json(selected_division), indent=2),
+            f"{selected_division.replace(' ', '_')}.json",
+            "application/json",
+            use_container_width=True,
+        )
+        all_data = [_division_to_json(d) for d in bb_divisions]
+        exp_col2.download_button(
+            "Export All Divisions (JSON)",
+            json.dumps(all_data, indent=2),
+            "all_divisions.json",
+            "application/json",
+            use_container_width=True,
+        )
+
 # ── Page: Data Issues ─────────────────────────────────────────────────────────
 elif page == "⚠️ Data Issues":
+    st.subheader("Data Issues")
     if issues_df.empty:
         st.success("No data issues found!")
     else:
@@ -406,37 +428,3 @@ elif page == "⚠️ Data Issues":
             "data_issues.csv",
             "text/csv",
         )
-
-# ── Page: Brackets ────────────────────────────────────────────────────────────
-elif page == "🏆 Brackets":
-    _issues_alert()
-    divisions = sorted(
-        d for d in sparring_df["Division"].dropna().unique()
-        if str(d).endswith("Black Belt")
-    )
-
-    if not divisions:
-        st.info("No black belt sparring divisions found.")
-    else:
-        _div_counts = sparring_df[sparring_df["Division"].isin(divisions)].groupby("Division").size()
-        _div_labels = {d: f"{d} — {_div_counts.get(d, 0)} competitor(s)" for d in divisions}
-        _label_to_div = {v: k for k, v in _div_labels.items()}
-
-        selected_label = st.selectbox("Select Division", list(_div_labels.values()))
-        selected_division = _label_to_div[selected_label]
-
-        div_df = sparring_df[sparring_df["Division"] == selected_division]
-        seeded = seed_competitors(div_df)
-        school_map = dict(zip(div_df["Athlete Name"], div_df["School Name"]))
-        n = len(seeded)
-
-        st.markdown(f"**{selected_division}** — {n} competitor(s)")
-
-        if n < 2:
-            st.warning("Need at least 2 competitors to generate a bracket.")
-            if n == 1:
-                st.write(f"🏆 {seeded[0]} — sole competitor")
-        else:
-            rounds = build_bracket(seeded)
-            html, height = _render_bracket_html(rounds, flagged_names, school_map)
-            components.html(html, height=height + 20, scrolling=True)
