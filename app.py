@@ -414,6 +414,23 @@ elif page == "🥊 Sparring":
             use_container_width=True,
         )
 
+        st.divider()
+        st.subheader("🚀 Pipeline Architecture Integration")
+        if st.button("Sync directly to Bracket Generator", use_container_width=True, type="primary"):
+            import os
+            from pathlib import Path
+            try:
+                # Target: tournament-data-pipeline / bracket_generator / public / pipeline_data.json
+                pipeline_dir = Path(__file__).resolve().parent.parent / "bracket_generator" / "public"
+                pipeline_dir.mkdir(parents=True, exist_ok=True)
+                target_file = pipeline_dir / "pipeline_data.json"
+                with open(target_file, "w") as f:
+                    json.dump(all_data, f, indent=2)
+                st.success(f"Successfully synced {len(all_data)} divisions to the Bracket Generator! You can now load it instantly from the other app.")
+            except Exception as e:
+                st.error(f"Failed to sync to bracket generator: {e}")
+
+
 # ── Page: Data Issues ─────────────────────────────────────────────────────────
 elif page == "⚠️ Data Issues":
     st.subheader("Data Issues")
