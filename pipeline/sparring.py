@@ -122,7 +122,7 @@ def _parse_weight_range(division: str) -> tuple[float | None, float | None]:
     return None, None
 
 
-def flag_issues(sparring_df: pd.DataFrame) -> pd.DataFrame:
+def flag_issues(sparring_df: pd.DataFrame, clean_df: pd.DataFrame = None) -> pd.DataFrame:
     """
     Identify data quality issues in the sparring competitor list.
 
@@ -131,6 +131,7 @@ def flag_issues(sparring_df: pd.DataFrame) -> pd.DataFrame:
       2. No weight entered (empty or 0) for non-World-Class competitors
          (World Class competitors don't rely on the weight field)
       3. Fallback division assigned but age bracket is 'Under 6' (likely DOB error)
+      4. No event selected (empty 'Pick Event(s) Below') — checked on all athletes
 
     Flagged athletes are NOT removed from the sparring output — they are surfaced
     here for manual review.
@@ -139,6 +140,18 @@ def flag_issues(sparring_df: pd.DataFrame) -> pd.DataFrame:
     """
     world_class_cols_present = [c for c in WORLD_CLASS_COLS if c in sparring_df.columns]
     flags: list[dict] = []
+
+    # --- Flag 4: No event selected (checked on all athletes) ---
+    if clean_df is not None:
+        for _, row in clean_df.iterrows():
+            events = row.get("Pick Event(s) Below")
+            if pd.isna(events) or str(events).strip() == "":
+                flags.append({
+                    "Athlete Name": row.get("Athlete Name", ""),
+                    "School": row.get("School Name", ""),
+                    "Issue": "No event selected",
+                    "Raw Value": events,
+                })
 
     for _, row in sparring_df.iterrows():
         name = row.get("Athlete Name", "")

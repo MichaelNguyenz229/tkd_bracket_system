@@ -63,6 +63,8 @@ def _make_clean_df() -> pd.DataFrame:
         {"Athlete Name": "Sam Rivers",       "Date of Birth": "2013-03-10", "Gender": "Male",   "Rank": "Black", "Dan": "1", "School Name": "Dragon TKD Academy",   "Pick Event(s) Below": "Grass Root Sparring",        "Weight in KG": None},
         # Issue 2: future date of birth
         {"Athlete Name": "Zoe Future",       "Date of Birth": "2028-05-01", "Gender": "Female", "Rank": "Red",   "Dan": "",  "School Name": "Elite Martial Arts",   "Pick Event(s) Below": "Grass Root Sparring",        "Weight in KG": 25.0},
+        # Issue 3: no event selected
+        {"Athlete Name": "Jake NoEvent",     "Date of Birth": "2011-06-15", "Gender": "Male",   "Rank": "Blue",  "Dan": "",  "School Name": "Riverside TKD",        "Pick Event(s) Below": "",                           "Weight in KG": 35.0},
     ]
 
     # Fill missing World Class cols with empty string
@@ -96,5 +98,5 @@ def load_demo_data() -> tuple:
     """
     clean_df = _make_clean_df()
     sparring_df = extract_sparring(clean_df)
-    issues_df = flag_issues(sparring_df)
+    issues_df = flag_issues(sparring_df, clean_df)
     return clean_df, sparring_df, issues_df
