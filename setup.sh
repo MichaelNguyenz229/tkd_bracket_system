@@ -6,32 +6,31 @@ echo " TKD Bracket App - Auto Setup (Mac)"
 echo "============================================"
 echo ""
 
-# Install Homebrew if missing
-if ! command -v brew &> /dev/null; then
-    echo "Installing Homebrew..."
-    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    # Add brew to PATH for Apple Silicon Macs
-    if [[ $(uname -m) == "arm64" ]]; then
-        eval "$(/opt/homebrew/bin/brew shellenv)"
-    fi
+# Install uv (no admin needed, installs to ~/.local/bin)
+if ! command -v uv &> /dev/null && [ ! -f "$HOME/.local/bin/uv" ]; then
+    echo "Installing uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
     echo ""
 fi
 
-# Install Git if missing
+export PATH="$HOME/.local/bin:$PATH"
+
+# Use uv to install Python (no admin needed)
+echo "Checking Python..."
+uv python install 3.12
+echo ""
+
+# Check for git
 if ! command -v git &> /dev/null; then
-    echo "Installing Git..."
-    brew install git
+    echo "Git not found. Run this command first, then re-run setup:"
     echo ""
+    echo "  xcode-select --install"
+    echo ""
+    echo "A popup will appear — click Install and wait for it to finish."
+    exit 1
 fi
 
-# Install Python if missing
-if ! command -v python3 &> /dev/null; then
-    echo "Installing Python..."
-    brew install python@3.12
-    echo ""
-fi
-
-# Clone repo to Desktop if not already done
+# Clone repo to Desktop
 DEST="$HOME/Desktop/tkd_bracket_system"
 if [ ! -d "$DEST" ]; then
     echo "Downloading app to Desktop..."
@@ -40,16 +39,6 @@ if [ ! -d "$DEST" ]; then
 fi
 
 cd "$DEST"
-
-# Install uv if missing
-if ! command -v uv &> /dev/null; then
-    echo "Installing uv..."
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    export PATH="$HOME/.local/bin:$PATH"
-    echo ""
-fi
-
-export PATH="$HOME/.local/bin:$PATH"
 
 # Install app dependencies
 echo "Installing app dependencies..."
