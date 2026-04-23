@@ -71,7 +71,7 @@ components.html(
 )
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
-_pages = ["📊 Reports", "🥊 Sparring", "⚠️ Data Issues"]
+_pages = ["📊 Reports", "🥊 Sparring", "⚠️ Data Issues", "🎫 Credentials"]
 
 if "nav_goto" in st.session_state:
     st.session_state["nav_page"] = st.session_state.pop("nav_goto")
@@ -238,6 +238,162 @@ tr:nth-child(even) {{ background: #fafafa; }}
         </script>""",
         height=0, width=0,
     )
+
+
+# ── Credentials HTML builder ─────────────────────────────────────────────────
+def _build_credentials_html(df: pd.DataFrame, sparring_df: pd.DataFrame, blank: bool = False) -> str:
+    from pathlib import Path
+    from pipeline.cleaning import get_birth_year, TOURNAMENT_YEAR
+
+    logo_path = Path(__file__).parent / "images" / "AAU_logo.png"
+    logo_b64 = base64.b64encode(logo_path.read_bytes()).decode()
+    logo_src = f"data:image/png;base64,{logo_b64}"
+
+    # Build name → division lookup for black belt athletes only
+    division_lookup: dict[str, str] = {}
+    if "Division" in sparring_df.columns and "Athlete Name" in sparring_df.columns:
+        for _, r in sparring_df.iterrows():
+            div = str(r.get("Division", ""))
+            if div.endswith("Black Belt"):
+                division_lookup[str(r.get("Athlete Name", "")).strip()] = div
+
+    df = df.copy().sort_values("School Name", na_position="last").reset_index(drop=True)
+
+    if blank:
+        rows_to_iter = [None] * 4
+    else:
+        rows_to_iter = [row for _, row in df.iterrows()]
+
+    cards = []
+    for row in rows_to_iter:
+        name       = "" if blank else str(row.get("Athlete Name", "")).strip()
+        gender     = "" if blank else str(row.get("Gender", "")).strip()
+        rank       = "" if blank else str(row.get("Rank", "")).strip()
+        school     = "" if blank else str(row.get("School Name", "")).strip()
+        if blank:
+            age = ""
+        else:
+            _by = get_birth_year(row.get("Date of Birth"))
+            age = str(TOURNAMENT_YEAR - _by) if _by else "—"
+
+        events_raw = "" if blank else str(row.get("Pick Event(s) Below", ""))
+        events = [] if blank else [e.strip() for e in events_raw.split(",") if e.strip() and events_raw != "nan"]
+        events_html = "".join(f'<div class="ev">• {html_lib.escape(e)}</div>' for e in events) or '<div class="ev">—</div>'
+
+        is_sparring = any("sparring" in e.lower() for e in events)
+        weight_raw  = None if blank else row.get("Weight in KG", "")
+        try:
+            w = float(weight_raw)
+            weight_str = f"{w:.1f} kg" if w > 0 else "—"
+        except (TypeError, ValueError):
+            weight_str = "—"
+
+        if blank:
+            cards.append(f"""
+        <div class="card">
+          <div class="card-header">
+            <img src="{logo_src}" class="logo" alt="AAU Logo">
+            <div class="title-block">
+              <div class="title-main">AAU District Championship</div>
+              <div class="title-sub">Southern Pacific / National Qualifier</div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="field name-field blank-line">&nbsp;</div>
+            <div class="field school-sub blank-full">&nbsp;</div>
+            <div class="field field-row">
+              <span><span class="lbl">Age:</span> <span class="blank-inline">&nbsp;</span></span>
+              <span><span class="lbl">Gender:</span> <span class="blank-inline">&nbsp;</span></span>
+            </div>
+            <div class="field"><span class="lbl">Belt:</span> <span class="blank-full">&nbsp;</span></div>
+            <div class="field"><span class="lbl">Events:</span> <span class="blank-full" style="min-height:36px;display:inline-block;">&nbsp;</span></div>
+            <div class="field"><span class="lbl">Division:</span> <span class="blank-full">&nbsp;</span></div>
+            <div class="field"><span class="lbl">Weight:</span> <span class="blank-full">&nbsp;</span></div>
+          </div>
+          <div class="card-footer">ATHLETE</div>
+        </div>""")
+        else:
+            weight_row = f'<div class="field"><span class="lbl">Weight:</span> <span class="val">{weight_str}</span></div>' if is_sparring else ""
+            division = division_lookup.get(name, "")
+            division_row = f'<div class="field"><span class="lbl">Division:</span> <span class="val">{html_lib.escape(division)}</span></div>' if division else ""
+
+            cards.append(f"""
+        <div class="card">
+          <div class="card-header">
+            <img src="{logo_src}" class="logo" alt="AAU Logo">
+            <div class="title-block">
+              <div class="title-main">AAU District Championship</div>
+              <div class="title-sub">Southern Pacific / National Qualifier</div>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="field name-field">{html_lib.escape(name)}</div>
+            <div class="field school-sub">{html_lib.escape(school)}</div>
+            <div class="field field-row">
+              <span><span class="lbl">Age:</span> <span class="val">{age}</span></span>
+              <span><span class="lbl">Gender:</span> <span class="val">{html_lib.escape(gender)}</span></span>
+            </div>
+            <div class="field"><span class="lbl">Belt:</span> <span class="val">{html_lib.escape(rank)}</span></div>
+            <div class="field"><span class="lbl">Events:</span><div class="ev-list">{events_html}</div></div>
+            {division_row}
+            {weight_row}
+          </div>
+          <div class="card-footer">ATHLETE</div>
+        </div>""")
+
+    pages = []
+    for i in range(0, len(cards), 4):
+        chunk = cards[i:i+4]
+        while len(chunk) < 4:
+            chunk.append('<div class="card card-empty"></div>')
+        pages.append('<div class="page">' + "".join(chunk) + "</div>")
+
+    num_pages = len(pages)
+
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+*{{box-sizing:border-box;margin:0;padding:0;}}
+body{{font-family:Arial,sans-serif;background:#eee;}}
+.controls{{padding:14px 20px;background:#fff;border-bottom:1px solid #ccc;display:flex;align-items:center;gap:16px;}}
+.print-btn{{background:#1a3a8f;color:#fff;border:none;padding:10px 22px;font-size:14px;font-weight:700;border-radius:6px;cursor:pointer;}}
+.print-btn:hover{{background:#142d70;}}
+.info{{color:#555;font-size:13px;}}
+.page{{width:8.5in;height:11in;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;
+       margin:20px auto;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,0.2);}}
+.card{{width:4.25in;height:5.5in;border:1px solid #bbb;display:flex;flex-direction:column;overflow:hidden;}}
+.card-empty{{background:#f9f9f9;}}
+.card-header{{display:flex;align-items:center;padding:10px 12px;border-bottom:3px solid #1a3a8f;gap:12px;}}
+.logo{{width:56px;height:56px;object-fit:contain;}}
+.title-main{{font-size:18px;font-weight:900;color:#1a3a8f;letter-spacing:0.5px;}}
+.title-sub{{font-size:11px;color:#666;text-transform:uppercase;letter-spacing:1px;margin-top:2px;}}
+.card-body{{flex:1;padding:12px 16px;display:flex;flex-direction:column;gap:9px;}}
+.field{{font-size:13px;border-bottom:1px solid #e8e8e8;padding-bottom:6px;}}
+.name-field{{font-size:20px;font-weight:800;color:#111;padding-bottom:2px;border-bottom:none;}}
+.school-sub{{font-size:12px;color:#555;border-bottom:2px solid #1a3a8f;padding-bottom:7px;}}
+.field-row{{display:flex;gap:24px;}}
+.lbl{{font-weight:700;color:#333;}}
+.val{{color:#111;}}
+.ev-list{{margin-top:3px;padding-left:2px;}}
+.ev{{font-size:12px;color:#333;line-height:1.7;}}
+.blank-line{{border-bottom:2px solid #1a3a8f!important;min-height:24px;}}
+.blank-full{{display:inline-block;width:70%;border-bottom:1px solid #999;}}
+.blank-inline{{display:inline-block;width:60px;border-bottom:1px solid #999;}}
+.card-footer{{background:#1a3a8f;color:#fff;text-align:center;padding:14px 8px;
+              font-size:28px;font-weight:900;text-transform:uppercase;letter-spacing:4px;}}
+@media print{{
+  *{{-webkit-print-color-adjust:exact;print-color-adjust:exact;}}
+  body{{background:#fff;}}
+  .controls{{display:none!important;}}
+  .page{{width:8.5in;height:11in;margin:0;page-break-after:always;box-shadow:none;}}
+  .card{{border:0.5px solid #aaa;}}
+}}
+</style></head><body>
+<div class="controls">
+  <button class="print-btn" onclick="window.print()">🖨 Print Credentials</button>
+  <span class="info">{"4 blank cards · 1 page" if blank else f"{len(df)} athletes · {num_pages} page(s) · sorted by school"}</span>
+</div>
+{"".join(pages)}
+</body></html>"""
 
 
 # ── Page: Reports ────────────────────────────────────────────────────────────
@@ -528,6 +684,35 @@ elif page == "🥊 Sparring":
             except Exception as e:
                 st.error(f"Failed to sync to bracket generator: {e}")
 
+
+# ── Page: Credentials ────────────────────────────────────────────────────────
+elif page == "🎫 Credentials":
+    st.subheader(f"Credentials — {len(clean_df)} athletes")
+
+    # Preview: simple table sorted by school
+    preview_df = clean_df[["Athlete Name", "School Name", "Gender", "Rank", "Pick Event(s) Below"]].copy()
+    preview_df = preview_df.sort_values("School Name", na_position="last").reset_index(drop=True)
+    st.dataframe(preview_df, width="stretch", hide_index=True)
+
+    dl_col1, dl_col2 = st.columns(2)
+    with dl_col1:
+        cred_html = _build_credentials_html(clean_df, sparring_df, blank=False)
+        st.download_button(
+            label="🖨 Download Filled Credentials",
+            data=cred_html.encode("utf-8"),
+            file_name="credentials_filled.html",
+            mime="text/html",
+            key="dl_creds_filled",
+        )
+    with dl_col2:
+        blank_html = _build_credentials_html(clean_df, sparring_df, blank=True)
+        st.download_button(
+            label="🖨 Download Blank Credentials",
+            data=blank_html.encode("utf-8"),
+            file_name="credentials_blank.html",
+            mime="text/html",
+            key="dl_creds_blank",
+        )
 
 # ── Page: Data Issues ─────────────────────────────────────────────────────────
 elif page == "⚠️ Data Issues":
