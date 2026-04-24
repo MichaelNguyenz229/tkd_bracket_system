@@ -103,9 +103,16 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     elif "Team Partner Name" in df.columns and "Please Confirm your Division Down Below" in df.columns:
         df = df.drop(columns=["Team Partner Name"])
 
-    # Normalize Rank: strip extra internal whitespace (e.g. "Black " → "Black")
+    # Normalize Rank: strip whitespace and expand bare "Black" → "Black Belt"
     if "Rank" in df.columns:
-        df["Rank"] = df["Rank"].apply(lambda x: " ".join(x.split()) if isinstance(x, str) else x)
+        def _normalize_rank(x):
+            if not isinstance(x, str):
+                return x
+            x = " ".join(x.split())
+            if x.lower() == "black":
+                return "Black Belt"
+            return x
+        df["Rank"] = df["Rank"].apply(_normalize_rank)
 
     # Normalize events: strip whitespace around each comma-separated event
     if "Pick Event(s) Below" in df.columns:

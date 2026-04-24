@@ -396,6 +396,15 @@ body{{font-family:Arial,sans-serif;background:#eee;}}
 </body></html>"""
 
 
+def _search_df(df: pd.DataFrame, query: str) -> pd.DataFrame:
+    """Return rows where any column contains query (case-insensitive). Empty query = all rows."""
+    q = query.strip()
+    if not q:
+        return df
+    mask = df.apply(lambda col: col.astype(str).str.contains(q, case=False, na=False)).any(axis=1)
+    return df[mask].reset_index(drop=True)
+
+
 # ── Page: Reports ────────────────────────────────────────────────────────────
 if page == "📊 Reports":
     _issues_alert()
@@ -460,7 +469,6 @@ if page == "📊 Reports":
         ]
 
     report_df = report_df.reset_index(drop=True)
-    _rpt_title_placeholder.subheader(f"Reports — {len(report_df)} athletes")
 
     if visible_cols:
         report_df = report_df[visible_cols]
@@ -468,7 +476,9 @@ if page == "📊 Reports":
         st.warning("Select at least one column to display.")
         st.stop()
 
-
+    rpt_search = st.text_input("🔍 Search", placeholder="Name, school, division…", key="rpt_search", label_visibility="collapsed")
+    report_df = _search_df(report_df, rpt_search)
+    _rpt_title_placeholder.subheader(f"Reports — {len(report_df)} athletes")
 
     if rpt_group_by == "None":
         st.dataframe(report_df, width="stretch", hide_index=True)
@@ -571,6 +581,9 @@ elif page == "🥊 Sparring":
     if gender_filter and len(gender_filter) < 2:
         pattern = r"\b" + gender_filter[0] + r"\b"
         display_df = display_df[display_df["Division"].str.contains(pattern, regex=True, na=False)].reset_index(drop=True)
+
+    spr_search = st.text_input("🔍 Search", placeholder="Name, school, division…", key="spr_search", label_visibility="collapsed")
+    display_df = _search_df(display_df, spr_search)
 
     def highlight_flagged(row: pd.Series):
         if row["Athlete Name"] in flagged_names:
