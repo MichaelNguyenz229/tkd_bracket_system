@@ -46,7 +46,8 @@ fi
 
 # ── Clone tkd_bracket_system ─────────────────────────────────────────────────
 TKD="$HOME/Desktop/tkd_bracket_system"
-if [ ! -d "$TKD" ]; then
+if [ ! -f "$TKD/app.py" ]; then
+    rm -rf "$TKD"
     echo "Downloading TKD Bracket System..."
     git clone https://github.com/MichaelNguyenz229/tkd_bracket_system.git "$TKD"
     echo ""
@@ -60,7 +61,8 @@ echo ""
 
 # ── Clone bracket_generator ───────────────────────────────────────────────────
 BG="$HOME/Desktop/bracket_generator"
-if [ ! -d "$BG" ]; then
+if [ ! -f "$BG/package.json" ]; then
+    rm -rf "$BG"
     echo "Downloading Bracket Generator..."
     git clone https://github.com/MichaelNguyenz229/bracket-generator.git "$BG"
     echo ""
