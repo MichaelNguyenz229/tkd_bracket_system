@@ -44,12 +44,16 @@ if ! command -v git &> /dev/null; then
     exit 1
 fi
 
-# ── Clone tkd_bracket_system ─────────────────────────────────────────────────
+# ── Clone / update tkd_bracket_system ────────────────────────────────────────
 TKD="$HOME/Desktop/tkd_bracket_system"
 if [ ! -f "$TKD/app.py" ]; then
     rm -rf "$TKD"
     echo "Downloading TKD Bracket System..."
     git clone https://github.com/MichaelNguyenz229/tkd_bracket_system.git "$TKD"
+    echo ""
+else
+    echo "Updating TKD Bracket System..."
+    git -C "$TKD" pull --ff-only
     echo ""
 fi
 
@@ -59,12 +63,16 @@ cd "$TKD"
 uv sync
 echo ""
 
-# ── Clone bracket_generator ───────────────────────────────────────────────────
+# ── Clone / update bracket_generator ─────────────────────────────────────────
 BG="$HOME/Desktop/bracket_generator"
 if [ ! -f "$BG/package.json" ]; then
     rm -rf "$BG"
     echo "Downloading Bracket Generator..."
     git clone https://github.com/MichaelNguyenz229/bracket-generator.git "$BG"
+    echo ""
+else
+    echo "Updating Bracket Generator..."
+    git -C "$BG" pull --ff-only
     echo ""
 fi
 
@@ -74,17 +82,39 @@ cd "$BG"
 npm install
 echo ""
 
+# ── Create double-clickable Desktop shortcuts ─────────────────────────────────
+cat > "$HOME/Desktop/Launch Bracket Generator.command" << 'CMD'
+#!/bin/bash
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+export PATH="$HOME/.local/bin:$PATH"
+cd "$HOME/Desktop/bracket_generator"
+sleep 2 && open http://localhost:5173 &
+npm run dev
+CMD
+chmod +x "$HOME/Desktop/Launch Bracket Generator.command"
+
+cat > "$HOME/Desktop/Launch TKD App.command" << 'CMD'
+#!/bin/bash
+export PATH="$HOME/.local/bin:$PATH"
+cd "$HOME/Desktop/tkd_bracket_system"
+sleep 2 && open http://localhost:8501 &
+uv run streamlit run app.py
+CMD
+chmod +x "$HOME/Desktop/Launch TKD App.command"
+
 echo "============================================"
 echo " Setup complete!"
 echo "============================================"
 echo ""
-echo "To run the TKD Pipeline app:"
-echo "  bash ~/Desktop/tkd_bracket_system/run.sh"
+echo "Two shortcuts are on your Desktop:"
+echo "  - 'Launch TKD App.command'"
+echo "  - 'Launch Bracket Generator.command'"
 echo ""
-echo "To run the Bracket Generator:"
-echo "  bash ~/Desktop/bracket_generator/run_bracket.sh"
+echo "Double-click either one to open the app."
 echo ""
 echo "Starting TKD Pipeline app now..."
 echo ""
 cd "$TKD"
+sleep 2 && open http://localhost:8501 &
 uv run streamlit run app.py
