@@ -2,25 +2,39 @@
 set -e
 
 echo "============================================"
-echo " TKD Bracket App - Auto Setup (Mac)"
+echo " TKD Tournament Apps - Auto Setup (Mac)"
 echo "============================================"
 echo ""
 
-# Install uv (no admin needed, installs to ~/.local/bin)
+# ── uv (Python package manager, no admin needed) ─────────────────────────────
 if ! command -v uv &> /dev/null && [ ! -f "$HOME/.local/bin/uv" ]; then
     echo "Installing uv..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
     echo ""
 fi
-
 export PATH="$HOME/.local/bin:$PATH"
 
-# Use uv to install Python (no admin needed)
+# ── Python (via uv, no admin needed) ─────────────────────────────────────────
 echo "Checking Python..."
 uv python install 3.12
 echo ""
 
-# Check for git
+# ── nvm + Node.js (no admin needed) ──────────────────────────────────────────
+export NVM_DIR="$HOME/.nvm"
+if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+    echo "Installing nvm (Node version manager)..."
+    curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
+    echo ""
+fi
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+
+if ! command -v node &> /dev/null; then
+    echo "Installing Node.js..."
+    nvm install --lts
+    echo ""
+fi
+
+# ── Git check ────────────────────────────────────────────────────────────────
 if ! command -v git &> /dev/null; then
     echo "Git not found. Run this command first, then re-run setup:"
     echo ""
@@ -30,27 +44,45 @@ if ! command -v git &> /dev/null; then
     exit 1
 fi
 
-# Clone repo to Desktop
-DEST="$HOME/Desktop/tkd_bracket_system"
-if [ ! -d "$DEST" ]; then
-    echo "Downloading app to Desktop..."
-    git clone https://github.com/MichaelNguyenz229/tkd_bracket_system.git "$DEST"
+# ── Clone tkd_bracket_system ─────────────────────────────────────────────────
+TKD="$HOME/Desktop/tkd_bracket_system"
+if [ ! -d "$TKD" ]; then
+    echo "Downloading TKD Bracket System..."
+    git clone https://github.com/MichaelNguyenz229/tkd_bracket_system.git "$TKD"
     echo ""
 fi
 
-cd "$DEST"
-
-# Install app dependencies
-echo "Installing app dependencies..."
+# ── Install Python app dependencies ──────────────────────────────────────────
+echo "Installing Python app dependencies..."
+cd "$TKD"
 uv sync
+echo ""
 
+# ── Clone bracket_generator ───────────────────────────────────────────────────
+BG="$HOME/Desktop/bracket_generator"
+if [ ! -d "$BG" ]; then
+    echo "Downloading Bracket Generator..."
+    git clone https://github.com/MichaelNguyenz229/bracket-generator.git "$BG"
+    echo ""
+fi
+
+# ── Install bracket generator dependencies ────────────────────────────────────
+echo "Installing Bracket Generator dependencies..."
+cd "$BG"
+npm install
 echo ""
+
 echo "============================================"
-echo " Setup complete! Launching app..."
+echo " Setup complete!"
 echo "============================================"
 echo ""
-echo "The app will open in your browser at http://localhost:8501"
-echo "Keep this window open while using the app."
-echo "Press Ctrl+C to stop the app."
+echo "To run the TKD Pipeline app:"
+echo "  bash ~/Desktop/tkd_bracket_system/run.sh"
 echo ""
+echo "To run the Bracket Generator:"
+echo "  bash ~/Desktop/bracket_generator/run_bracket.sh"
+echo ""
+echo "Starting TKD Pipeline app now..."
+echo ""
+cd "$TKD"
 uv run streamlit run app.py

@@ -12,10 +12,15 @@ from .cleaning import TOURNAMENT_YEAR, WORLD_CLASS_COLS, get_birth_year
 SPARRING_DISPLAY_COLS = [
     "Athlete Name",
     "School Name",
-    "Pick Event(s) Below",
+    "Sparring Event",
     "Weight in KG",
     "Division",
 ]
+
+_SPARRING_EVENTS = {
+    "olympic sparring": "Olympic Sparring",
+    "grass root sparring": "Grass Root Sparring",
+}
 
 
 def _age_bracket(age: int) -> str:
@@ -74,26 +79,28 @@ def assign_division(row: pd.Series, world_class_cols: list[str]) -> str:
 
 def extract_sparring(clean_df: pd.DataFrame) -> pd.DataFrame:
     """
-    Extract sparring competitors from the cleaned dataset and assign each a Division.
+    Extract sparring competitors, producing one row per (athlete, sparring event).
 
-    A competitor qualifies if 'Pick Event(s) Below' contains 'Olympic Sparring'
-    or 'Grass Root Sparring' (case-insensitive).
-
-    Returns the full set of clean columns plus a 'Division' column so that
-    downstream functions (flagging, display) can access all fields.
+    An athlete registered for both Olympic Sparring and Grass Root Sparring
+    gets two rows — one per event — so they appear in separate brackets.
     """
-    mask = clean_df["Pick Event(s) Below"].apply(
-        lambda x: bool(
-            re.search(r"(olympic sparring|grass root sparring)", str(x), re.IGNORECASE)
-        )
-    )
-    sparring = clean_df[mask].copy()
+    rows = []
+    for _, row in clean_df.iterrows():
+        for fragment in str(row.get("Pick Event(s) Below", "")).split(","):
+            m = re.search(r"(olympic sparring|grass root sparring)", fragment.strip(), re.IGNORECASE)
+            if m:
+                new_row = row.copy()
+                new_row["Sparring Event"] = _SPARRING_EVENTS[m.group(1).lower()]
+                rows.append(new_row)
 
+    if not rows:
+        return pd.DataFrame(columns=list(clean_df.columns) + ["Sparring Event", "Division"])
+
+    sparring = pd.DataFrame(rows)
     world_class_cols = [c for c in WORLD_CLASS_COLS if c in sparring.columns]
     sparring["Division"] = sparring.apply(
         lambda row: assign_division(row, world_class_cols), axis=1
     )
-
     return sparring.reset_index(drop=True)
 
 
@@ -153,7 +160,7 @@ def flag_issues(sparring_df: pd.DataFrame, clean_df: pd.DataFrame = None) -> pd.
                     "Raw Value": events,
                 })
 
-    for _, row in sparring_df.iterrows():
+    for _, row in sparring_df.drop_duplicates(subset=["Athlete Name"]).iterrows():
         name = row.get("Athlete Name", "")
         school = row.get("School Name", "")
         weight_raw = row.get("Weight in KG")

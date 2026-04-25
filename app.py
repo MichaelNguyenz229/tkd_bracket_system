@@ -540,13 +540,9 @@ elif page == "🥊 Sparring":
     _spr_title_col, _spr_print_col = st.columns([6, 1])
     _spr_title_col.subheader("Sparring")
     _spr_print_btn = _spr_print_col.button("🖨 Print", key="print_sparring")
-    total = len(sparring_df)
-    olympic_count = sparring_df["Pick Event(s) Below"].str.contains(
-        "Olympic Sparring", case=False, na=False
-    ).sum()
-    grass_count = sparring_df["Pick Event(s) Below"].str.contains(
-        "Grass Root Sparring", case=False, na=False
-    ).sum()
+    total = sparring_df["Athlete Name"].nunique()
+    olympic_count = (sparring_df["Sparring Event"] == "Olympic Sparring").sum()
+    grass_count = (sparring_df["Sparring Event"] == "Grass Root Sparring").sum()
 
     col1, col2, col3 = st.columns(3)
     col1.metric("Total Sparring Competitors", total)
@@ -596,21 +592,21 @@ elif page == "🥊 Sparring":
             width="stretch",
         )
     elif group_by == "Division":
-        for division, group in display_df.groupby("Division", sort=True):
-            st.markdown(f"**{division}** — {len(group)} competitor(s)")
+        for (division, event), group in display_df.groupby(["Division", "Sparring Event"], sort=True):
+            st.markdown(f"**{division} — {event}** — {len(group)} competitor(s)")
             st.dataframe(
                 group.reset_index(drop=True).style.apply(highlight_flagged, axis=1),
                 width="stretch",
             )
     elif group_by == "Event Type":
-        for event_label, pat in [("Olympic Sparring", "Olympic Sparring"), ("Grass Root Sparring", "Grass Root Sparring")]:
-            mask = display_df["Pick Event(s) Below"].str.contains(pat, case=False, na=False)
-            group = display_df[mask].reset_index(drop=True)
-            st.markdown(f"**{event_label}** — {len(group)} competitor(s)")
-            st.dataframe(
-                group.style.apply(highlight_flagged, axis=1),
-                width="stretch",
-            )
+        for event_label in ["Olympic Sparring", "Grass Root Sparring"]:
+            group = display_df[display_df["Sparring Event"] == event_label].reset_index(drop=True)
+            if not group.empty:
+                st.markdown(f"**{event_label}** — {len(group)} competitor(s)")
+                st.dataframe(
+                    group.style.apply(highlight_flagged, axis=1),
+                    width="stretch",
+                )
     elif group_by == "School Name":
         for school, group in display_df.groupby("School Name", sort=True):
             st.markdown(f"**{school}** — {len(group)} competitor(s)")
@@ -624,13 +620,13 @@ elif page == "🥊 Sparring":
         if group_by == "None":
             _sections.append(("", display_df))
         elif group_by == "Division":
-            for division, group in display_df.groupby("Division", sort=True):
-                _sections.append((division, group.reset_index(drop=True)))
+            for (division, event), group in display_df.groupby(["Division", "Sparring Event"], sort=True):
+                _sections.append((f"{division} — {event}", group.reset_index(drop=True)))
         elif group_by == "Event Type":
-            for event_label, pat in [("Olympic Sparring", "Olympic Sparring"), ("Grass Root Sparring", "Grass Root Sparring")]:
-                mask = display_df["Pick Event(s) Below"].str.contains(pat, case=False, na=False)
-                group = display_df[mask].reset_index(drop=True)
-                _sections.append((event_label, group))
+            for event_label in ["Olympic Sparring", "Grass Root Sparring"]:
+                group = display_df[display_df["Sparring Event"] == event_label].reset_index(drop=True)
+                if not group.empty:
+                    _sections.append((event_label, group))
         elif group_by == "School Name":
             for school, group in display_df.groupby("School Name", sort=True):
                 _sections.append((school, group.reset_index(drop=True)))
@@ -646,25 +642,29 @@ elif page == "🥊 Sparring":
         _open_print_view(f"Sparring{_spr_subtitle}{_filter_str} — {len(display_df)} competitors", _sections, flagged_names)
 
     # ── Division JSON exports (moved from Brackets tab) ──────────────────
-    bb_divisions = sorted(
-        d for d in sparring_df["Division"].dropna().unique()
+    bb_entries = sorted(
+        (d, e)
+        for d, e in sparring_df[["Division", "Sparring Event"]].drop_duplicates().itertuples(index=False)
         if str(d).endswith("Black Belt")
     )
 
-    if bb_divisions:
-        def _division_to_json(division_name: str) -> dict:
-            df = sparring_df[sparring_df["Division"] == division_name]
+    if bb_entries:
+        def _division_to_json(division_name: str, sparring_event: str) -> dict:
+            df = sparring_df[
+                (sparring_df["Division"] == division_name) &
+                (sparring_df["Sparring Event"] == sparring_event)
+            ]
             names = seed_competitors(df)
             schools = dict(zip(df["Athlete Name"], df["School Name"]))
             return {
-                "division": division_name,
+                "division": f"{division_name} — {sparring_event}",
                 "competitors": [
                     {"id": str(i + 1), "name": name, "school": schools.get(name, ""), "photoUrl": ""}
                     for i, name in enumerate(names)
                 ],
             }
 
-        all_data = [_division_to_json(d) for d in bb_divisions]
+        all_data = [_division_to_json(d, e) for d, e in bb_entries]
 
         st.divider()
         st.markdown(
